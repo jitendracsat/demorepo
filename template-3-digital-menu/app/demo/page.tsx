@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createOrder } from "../utils/api";
 
 export default function DemoPage() {
   const router = useRouter();
@@ -43,15 +42,23 @@ export default function DemoPage() {
         outletId: "OUT001"
       };
 
-      const result = await createOrder(orderData);
+      const result = await fetch('/api/demo-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(orderData),
+      });
       
-      console.log('🔍 Full API Result:', result);
-      console.log('🔍 Success check:', result.success);
-      console.log('🔍 Order data:', result.order);
+      const data = await result.json();
       
-      // ✅ FIXED: Check for result.order instead of result.data
-      if (result.success && result.order) {
-        const newOrderId = result.order.id;
+      console.log('🔍 Full API Result:', data);
+      console.log('🔍 Success check:', data.success);
+      console.log('🔍 Order data:', data.orderData);
+      
+      // ✅ FIXED: Check for data.success and data.orderId
+      if (data.success && data.orderId) {
+        const newOrderId = data.orderId;
         console.log('✅ Order created successfully with ID:', newOrderId);
         setOrderId(newOrderId);
         
@@ -59,8 +66,8 @@ export default function DemoPage() {
         console.log('🚀 Redirecting to:', `/bill/${newOrderId}`);
         router.push(`/bill/${newOrderId}`);
       } else {
-        console.log('❌ Order creation failed:', result);
-        setError(result.error || "Failed to create order");
+        console.log('❌ Order creation failed:', data);
+        setError(data.error || "Failed to create order");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");

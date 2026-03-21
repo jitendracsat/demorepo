@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sendWhatsAppReceipt } from '@/src/services/whatsapp';
 
 // Mock order counter for generating sequential test IDs
 let orderCounter = 12345;
@@ -9,13 +10,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('🧪 Mock API: Received order request:', body);
 
-    // Generate a mock order ID
-    const orderId = `test-ord-${orderCounter++}`;
+    // Generate a mock order ID with proper format
+    const orderId = `ORD-${orderCounter++}`;
     
-    // Simulate SMS gateway trigger
+    // Generate receipt URL using port 3000 and send WhatsApp message
     const receiptUrl = `http://localhost:3000/bill/${orderId}`;
     const dummyPhoneNumber = '+91-98765-43210';
     
+    // Send WhatsApp receipt with fallback logic
+    console.log('📱 Sending WhatsApp receipt...');
+    const whatsappResult = await sendWhatsAppReceipt(dummyPhoneNumber, receiptUrl);
+    
+    if (whatsappResult.success) {
+      console.log('✅ WhatsApp message sent successfully');
+    } else {
+      console.log('⚠️ WhatsApp message failed:', whatsappResult.error);
+    }
+    
+    // Simulate SMS gateway trigger (keeping for backward compatibility)
     console.log('📱 Simulating SMS Gateway Trigger:');
     console.log(`   To: ${dummyPhoneNumber}`);
     console.log(`   Message: Your digital receipt is ready! View your order details: ${receiptUrl}`);
