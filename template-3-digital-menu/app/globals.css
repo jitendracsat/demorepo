@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-main: #E6EDF3;
+    --text-primary: #0B4F6C;
+    --text-secondary: rgba(11, 79, 108, 0.8);
+    --accent-red: #E5533D;
+    --card-bg: #FAF7F2;
+  }
+}
+
+@layer utilities {
+  .font-playfair {
+    font-family: var(--font-playfair), serif;
+  }
+
+  .font-inter {
+    font-family: var(--font-inter), sans-serif;
+  }
+
+  .font-roboto {
+    font-family: var(--font-roboto), sans-serif;
+  }
+}
+
+/* Hide scrollbars for Chrome, Safari and Opera */
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbars for IE, Edge and Firefox */
+* {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #E6EDF3;
+  color: #0B4F6C;
+  overflow-x: hidden;
+}
+
+/* Print styles for digital receipt */
+@media print {
+  body {
+    background-color: white !important;
+  }
+  
+  .min-h-screen {
+    min-height: auto !important;
+  }
+  
+  .bg-gray-50 {
+    background-color: white !important;
+  }
+  
+  /* Hide action buttons when printing */
+  button {
+    display: none !important;
+  }
+  
+  /* Ensure receipt fits on one page */
+  .max-w-md {
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+  
+  /* Remove shadows and rounded corners for printing */
+  .shadow-lg {
+    box-shadow: none !important;
+  }
+  
+  .rounded-lg {
+    border-radius: 0 !important;
+  }
+  
+  /* Ensure text is black for printing */
+  * {
+    color: black !important;
+  }
+  
+  .bg-gradient-to-r {
+    background: black !important;
+    color: white !important;
+  }
+  
+  .text-blue-600,
+  .text-green-600,
+  .text-green-300 {
+    color: black !important;
+  }
+  
+  .text-blue-100,
+  .text-gray-400,
+  .text-gray-500,
+  .text-gray-600 {
+    color: #666 !important;
+  }
+}
