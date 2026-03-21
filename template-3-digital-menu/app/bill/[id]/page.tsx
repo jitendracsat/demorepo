@@ -130,11 +130,5 @@ export default async function BillPage({ params }: PageProps) {
   );
 }
 
-// Generate static params for common test IDs
-export async function generateStaticParams() {
-  return [
-    { id: 'test-ord-12345' },
-    { id: 'demo-order-67890' },
-    { id: 'sample-order-11111' },
-  ];
-}
+// Make page fully dynamic - no static generation
+export const dynamic = 'force-dynamic';
