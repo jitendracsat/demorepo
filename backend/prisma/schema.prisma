@@ -1,0 +1,49 @@
+// backend/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Main Order Table
+model Order {
+  id            String      @id @default(uuid())
+  
+  // CSAT POS Mapping Fields
+  restaurantId  String?     
+  outletId      String?     
+  posCode       String?     
+  
+  // General Order Info
+  tableNumber   String?     
+  totalAmount   Float       
+  status        String      @default("RECEIVED") 
+  paymentMethod String?     
+  csatSyncStatus Boolean    @default(false) 
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relation: Ek order mein multiple items ho sakte hain
+  items         OrderItem[] 
+}
+
+// Order Items Table (Dishes)
+model OrderItem {
+  id          String   @id @default(uuid())
+  
+  // Relation link to main Order
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  // Item Details
+  itemId      String   // CSAT Menu Item ID
+  itemName    String   
+  quantity    Int      
+  price       Float    
+  instruction String?  
+}
