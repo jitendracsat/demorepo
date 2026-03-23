@@ -30,6 +30,7 @@ export interface ApiResponse<T> {
   data?: T;
   bill?: T;
   order?: T;
+  posPayload?: any; // POS payload from backend
   error?: string;
 }
 

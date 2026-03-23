@@ -13,16 +13,32 @@ datasource db {
 model Order {
   id            String      @id @default(uuid())
   
-  // CSAT POS Mapping Fields
-  restaurantId  String?     
-  outletId      String?     
-  posCode       String?     
+  // POS System Required Fields
+  restaurantId  String?     // "restaurantid" in JSON
+  outletId      String?     // "outletId" in JSON  
+  posCode       String?     // "PosCode" in JSON
+  orderId       String?     // "OrderId" in JSON - External POS Order ID
+  orderDate     DateTime?   // "OrderDate" in JSON
   
-  // General Order Info
-  tableNumber   String?     
-  totalAmount   Float       
+  // Guest Information (flattened from guest object)
+  guestId       String?     // "guest.guestId"
+  guestName     String?     // "guest.name"
+  guestPhone    String?     // "guest.phone"
+  guestEmail    String?     // "guest.email"
+  guestDob      String?     // "guest.dateOfBirth"
+  guestAnniversary String?  // "guest.anniversary"
+  
+  // Order Financial Details
+  subtotal      Float?      // "subtotal" in JSON
+  discountAmount Float?     // "discountAmount" in JSON
+  taxAmount     Float?      // "taxAmount" in JSON
+  totalAmount   Float?      // "totalAmount" in JSON
+  
+  // Order Details
+  tableNumber   String?     // "TblNo" in JSON
+  paymentMethod String?     // "paymentMethod" in JSON
+  currency      String?     // "currency" in JSON
   status        String      @default("RECEIVED") 
-  paymentMethod String?     
   csatSyncStatus Boolean    @default(false) 
 
   createdAt     DateTime    @default(now())
@@ -40,10 +56,19 @@ model OrderItem {
   orderId     String
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   
-  // Item Details
-  itemId      String   // CSAT Menu Item ID
-  itemName    String   
-  quantity    Int      
-  price       Float    
-  instruction String?  
+  // POS System Required Fields
+  itemId      String   // "itemId" in JSON
+  itemName    String   // "itemName" in JSON
+  category    String?  // "category" in JSON
+  quantity    Float    // "quantity" in JSON (Float for decimal quantities)
+  unitPrice   Float?   // "unitPrice" in JSON
+  totalPrice  Float?   // "totalPrice" in JSON
+  discountApplied Float? // "discountApplied" in JSON
+  
+  // Modifiers stored as JSON array
+  modifiers    Json?    // "modifiers" array in JSON
+  
+  // Legacy field for backward compatibility
+  price       Float?   // Keep for existing code
+  instruction String?  // Keep for existing code
 }

@@ -16,38 +16,89 @@ export default function DemoPage() {
     
     try {
       const orderData = {
+        restaurantId: "REST001",
+        outletId: "OUT001",
+        tableNumber: "A-12",
+        paymentMethod: "CASH",
+        
+        // Guest Information
+        guestId: "9891929595",
+        guestName: "Jeetu",
+        guestPhone: "9891929595",
+        guestEmail: "jeetu@gmail.com",
+        guestDob: "01/01/1992",
+        guestAnniversary: "",
+        
+        // Financial Details
+        subtotal: 11395.0,
+        taxAmount: 3676.02,
+        discountAmount: 0.0,
+        totalAmount: 15071.0,
+        
+        // Cart Items with new schema fields
         cartItems: [
           {
             id: "1",
-            itemId: "1",
+            itemId: "1059",
             itemName: "Butter Chicken",
-            price: 12.99,
+            category: "MAIN COURSE",
+            price: 650.0,
             quantity: 2,
+            unitPrice: 650.0,
+            totalPrice: 1300.0,
+            discountApplied: 0.0,
+            modifiers: [],
             instructions: "Extra spicy"
           },
           {
             id: "2",
-            itemId: "2", 
+            itemId: "1060", 
             itemName: "Garlic Naan",
-            price: 3.99,
+            category: "BREAD",
+            price: 150.0,
             quantity: 4,
+            unitPrice: 150.0,
+            totalPrice: 600.0,
+            discountApplied: 0.0,
+            modifiers: [],
+            instructions: ""
+          },
+          {
+            id: "3",
+            itemId: "1061",
+            itemName: "CINZANO ROSE BY GLASS",
+            category: "COCKTAIL MENU",
+            price: 650.0,
+            quantity: 1,
+            unitPrice: 650.0,
+            totalPrice: 650.0,
+            discountApplied: 0.0,
+            modifiers: [],
             instructions: ""
           }
         ],
+        
+        // Legacy billDetails for backward compatibility
         billDetails: {
-          total: 41.94
-        },
-        tableNumber: "A-12",
-        paymentMethod: "CASH",
-        restaurantId: "REST001",
-        outletId: "OUT001"
+          total: 15071.0,
+          subtotal: 11395.0,
+          taxAmount: 3676.02,
+          discountAmount: 0.0
+        }
       };
 
+      console.log('🔥 FRONTEND PAYLOAD BEING SENT:\n', JSON.stringify(orderData, null, 2));
+      
       const data = await createOrder(orderData);
       
       console.log('🔍 Full API Result:', data);
       console.log('🔍 Success check:', data.success);
       console.log('🔍 Order data:', data.order);
+      
+      // 🔥 LOG POS PAYLOAD FROM BACKEND
+      if (data.posPayload) {
+        console.log('🔥 POS PAYLOAD FROM BACKEND:\n', JSON.stringify(data.posPayload, null, 2));
+      }
       
       // ✅ FIXED: Check for data.success and data.order.id
       if (data.success && data.order) {

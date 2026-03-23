@@ -45,17 +45,21 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   const [orderData, setOrderData] = useState<{items: any[], bill: any} | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<'cart' | 'summary' | 'payment' | 'success' | null>(null);
   
+  // Enhanced State Management for High-Performance Filtering
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState("ALL");
-  const [category, setCategory] = useState("Food");
-  const [tab, setTab] = useState(""); // Tab ab initial khali rahega
+  const [activeGroup, setActiveGroup] = useState(""); // For group filtering (e.g., 'GRP_0001')
+  const [dietPreference, setDietPreference] = useState("ALL"); // 'ALL', 'VEG', 'NON-VEG'
+  const [activeCategory, setActiveCategory] = useState(""); // For category filtering (e.g., '05')
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 5000]); // [min, max]
+  const [sortOrder, setSortOrder] = useState("LH"); // 'LH' or 'HL'
+  
+  const [category, setCategory] = useState("Food"); // Legacy support
+  const [filter, setFilter] = useState("ALL"); // Legacy support
+  const [tab, setTab] = useState(""); // Legacy support
   const [selectedDish, setSelectedDish] = useState<any>(null);
 
-  // Advanced filter states
-  const [priceRange, setPriceRange] = useState(2000);
-  const [sortOrder, setSortOrder] = useState("low-to-high");
+  // Advanced filter states (for legacy FilterOverlay compatibility)
   const [appliedFilters, setAppliedFilters] = useState<any>({});
-
   const [hasCustomFilters, setHasCustomFilters] = useState(false);
   const [filterCount, setFilterCount] = useState(0);
   const [globalCart, setGlobalCart] = useState<CartItem[]>([]);
@@ -170,22 +174,52 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   const filteredItems = useMemo(() => {
     let items = [...currentData];
     
-    // 1. Search filter
+    // 1. Search filter - Case-insensitive match on item.name
     if (searchQuery) {
       items = items.filter(item => 
         item.title.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     
-    // 2. Category filter (Food/Drinks group cards)
+    // 2. Group/Category filter - Match item.category_id or parent group
+    if (activeGroup) {
+      items = items.filter(item => 
+        item.category_id === activeGroup || 
+        item.category?.includes(activeGroup)
+      );
+    }
+    
+    // 3. Diet preference filter - If 'VEG', only show item.isVeg === true
+    if (dietPreference === "VEG") {
+      items = items.filter(item => item.isVeg);
+    } else if (dietPreference === "NON-VEG") {
+      items = items.filter(item => item.isNonVeg);
+    }
+    
+    // 4. Category filter - Match activeCategory
+    if (activeCategory) {
+      items = items.filter(item => item.category === activeCategory);
+    }
+    
+    // 5. Price filter - item.price must be within priceRange [min, max]
+    items = items.filter(item => 
+      item.price >= priceRange[0] && item.price <= priceRange[1]
+    );
+    
+    // 6. Sort order - Apply sortOrder (Low to High / High to Low)
+    if (sortOrder === "HL") {
+      items.sort((a, b) => b.price - a.price); // High to Low
+    } else {
+      items.sort((a, b) => a.price - b.price); // Low to High
+    }
+    
+    // Legacy filter compatibility
     items = items.filter(item => item.mainCategory === category);
     
-    // 3. Tab filter (horizontal category tabs)
     if (tab) {
       items = items.filter(item => item.category === tab);
     }
     
-    // 4. Diet preference filter (ALL/VEG/NON-VEG)
     if (category === "Food") {
       if (filter === "VEG") {
         items = items.filter(item => item.isVeg);
@@ -194,20 +228,17 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       }
     }
     
-    // 5. Advanced filters - Price range
+    // Advanced filters legacy compatibility
     if (appliedFilters.priceRange !== undefined) {
       items = items.filter(item => item.price <= appliedFilters.priceRange);
     }
     
-    // 6. Advanced filters - Sort order
     if (appliedFilters.sortOrder === "high-to-low") {
       items.sort((a, b) => b.price - a.price);
-    } else {
-      items.sort((a, b) => a.price - b.price);
     }
     
     return items;
-  }, [currentData, searchQuery, category, tab, filter, appliedFilters]);
+  }, [currentData, searchQuery, activeGroup, dietPreference, activeCategory, priceRange, sortOrder, category, tab, filter, appliedFilters]);
 
   const getFilteredSuggestions = () => {
     if (!searchQuery) return currentPopularSearches;
@@ -243,7 +274,12 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
 
       <section className="flex justify-center gap-[25px] mt-[25px] px-[21px] relative z-20">
         {mainCategories.map((cat) => (
-          <div key={cat.name} onClick={() => { setCategory(cat.name); setFilter(categoriesConfig[cat.name].filters[0]); }} className={`w-[80px] h-[100px] flex flex-col items-center justify-center gap-[5px] rounded-[8px] transition-all cursor-pointer hover:shadow-md border-[0.5px] ${category === cat.name ? "bg-[#0B4F6C] border-[#0B4F6C] shadow-md" : "bg-white border-[rgba(11,79,108,0.3)] shadow-sm"}`}>
+          <div key={cat.name} onClick={() => { 
+            setCategory(cat.name); 
+            setFilter(categoriesConfig[cat.name].filters[0]); 
+            setActiveGroup(""); 
+            setDietPreference("ALL");
+          }} className={`w-[80px] h-[100px] flex flex-col items-center justify-center gap-[5px] rounded-[8px] transition-all cursor-pointer hover:shadow-md border-[0.5px] ${category === cat.name ? "bg-[#0B4F6C] border-[#0B4F6C] shadow-md" : "bg-white border-[rgba(11,79,108,0.3)] shadow-sm"}`}>
             <div className="w-[50px] h-[50px] rounded-full overflow-hidden shadow-[1px_2px_4px_rgba(0,0,0,0.15)]"><img src={cat.img} alt={cat.name} className="w-full h-full object-cover" /></div>
             <h3 className={`font-inter text-[12px] leading-[15px] font-semibold text-center ${category === cat.name ? "text-white" : "text-[#0B4F6C]"}`}>{cat.name}</h3>
           </div>
@@ -253,7 +289,10 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       <section className="mx-auto w-[351px] h-[36px] mt-[15px] flex justify-between bg-white border-[0.6px] border-[rgba(11,79,108,0.2)] rounded-[50px] shadow-sm p-[3px] items-center relative z-20 overflow-hidden">
         {currentConfig.filters.map((f) => {
           const isActive = filter === f;
-          return (<button key={f} onClick={() => setFilter(f)} className={`flex-1 h-full flex items-center justify-center rounded-[50px] font-inter font-semibold text-[14px] leading-[17px] transition-all uppercase ${isActive ? "bg-[#0B4F6C] text-white shadow-md" : "text-[#0B4F6C]"}`}>{f}</button>);
+          return (<button key={f} onClick={() => { 
+            setFilter(f); 
+            setDietPreference(f === "VEG" ? "VEG" : f === "NON-VEG" ? "NON-VEG" : "ALL");
+          }} className={`flex-1 h-full flex items-center justify-center rounded-[50px] font-inter font-semibold text-[14px] leading-[17px] transition-all uppercase ${isActive ? "bg-[#0B4F6C] text-white shadow-md" : "text-[#0B4F6C]"}`}>{f}</button>);
         })}
       </section>
 
@@ -261,9 +300,12 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       <section className="mt-[30px] border-b border-[rgba(11,79,108,0.15)] relative z-20 overflow-x-auto no-scrollbar">
         <div className="flex px-[21px] gap-[30px] min-w-max pb-[2px]">
           {activeTabs.map((t) => {
-            const isActive = tab === t;
+            const isActive = tab === t || activeCategory === t;
             return (
-              <div key={t} onClick={() => setTab(t)} className="flex flex-col items-center flex-shrink-0 cursor-pointer group">
+              <div key={t} onClick={() => { 
+                setTab(t); 
+                setActiveCategory(t);
+              }} className="flex flex-col items-center flex-shrink-0 cursor-pointer group">
                 <span className={`font-inter text-[16px] leading-[19px] mb-2 transition-colors uppercase ${isActive ? "font-bold text-[#0B4F6C]" : "text-[rgba(11,79,108,0.4)] group-hover:text-[#0B4F6C]"}`}>{t}</span>
                 {isActive && <div className="w-full border-b-[4px] border-[#0B4F6C] h-0"></div>}
               </div>
