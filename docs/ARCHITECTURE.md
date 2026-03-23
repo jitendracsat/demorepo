@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project is a **digital menu and order management system** for restaurants, built on a decoupled, cloud-native architecture. The system captures guest orders from a self-service digital menu, punches them to a POS system, sends a WhatsApp receipt, and stores structured order data for CSAT analytics.
+This project is a **digital menu and order management system** for restaurants, built on a decoupled, cloud-native architecture. The system captures guest orders from a self-service digital menu, punches them to a POS system, sends a WhatsApp receipt, stores structured order data for CSAT analytics, and broadcasts real-time status updates to a Kitchen Display System (KDS) and the guest's live bill page via WebSockets.
 
 ---
 
@@ -10,11 +10,12 @@ This project is a **digital menu and order management system** for restaurants, 
 
 | Layer | Technology | Hosting | Purpose |
 |---|---|---|---|
-| Frontend | Next.js 16 (TypeScript) | Vercel | Digital menu UI, guest-facing order flow |
-| Backend | Node.js + Express 5 | Render | Order processing, POS integration, WhatsApp API |
+| Frontend | Next.js 16 (TypeScript) | Vercel | Digital menu UI, guest-facing order flow, KDS |
+| Backend | Node.js + Express 5 + Socket.io | Render | Order processing, POS integration, WhatsApp API, WebSocket server |
 | Database | PostgreSQL + Prisma ORM | Neon (serverless) | Persistent order and guest data |
 | Menu Source | CSAT REST API | External (`apiconnectnow.csatspl.com`) | Live menu items, categories, pricing |
 | Notifications | Meta WhatsApp Cloud API | External (Meta Graph v18.0) | Digital receipt delivery |
+| Real-time | Socket.io | Render (same process) | Live order status push to KDS and guest bill page |
 
 ---
 
@@ -210,3 +211,71 @@ Render digital bill (server component)
 1. Create a Neon project and copy the connection string (pooled endpoint recommended).
 2. Set `DATABASE_URL` in the backend environment.
 3. Run `npx prisma migrate deploy` from `backend/` to apply the schema.
+
+---
+
+## Real-time Layer (WebSockets / Socket.io)
+
+### Overview
+
+Socket.io is co-hosted with the Express server in the same Node.js process on Render. The HTTP server is upgraded to support WebSocket connections — no separate service or port is required.
+
+### Server-side setup
+
+**`backend/socket.js`** holds the Socket.io singleton:
+
+```
+initSocket(httpServer)  →  attaches Socket.io to the HTTP server, returns io instance
+getIO()                 →  returns the live io instance for use in controllers
+```
+
+**`backend/index.js`** wraps Express with `http.createServer(app)` and calls `initSocket(httpServer)` before `.listen()`.
+
+### Events
+
+| Event | Direction | Emitter | Payload | Consumers |
+|---|---|---|---|---|
+| `NEW_ORDER_RECEIVED` | Server → Client | `createOrder` controller (on successful DB write) | Full `Order` object (with `items`) | Kitchen Display System (`/kitchen`) |
+| `ORDER_STATUS_UPDATED` | Server → Client | `updateOrderStatus` controller (on `PATCH /api/orders/:id/status`) | `{ id: string, status: string }` | KDS + Guest bill page (`/bill/[id]`) |
+
+### Status lifecycle
+
+```
+RECEIVED  →  PREPARING  →  SERVED
+```
+
+The KDS drives status transitions. Each button click fires `PATCH /api/orders/:id/status`, the backend updates the database and broadcasts `ORDER_STATUS_UPDATED` to all connected clients.
+
+### Client-side setup
+
+**`app/lib/socket.ts`** — singleton socket client. Lazily creates one `socket.io-client` connection to `NEXT_PUBLIC_API_BASE_URL` and reuses it across components.
+
+**`app/kitchen/page.tsx`** — Kitchen Display System:
+- Loads all orders from `GET /api/orders` on mount (sorted: RECEIVED → PREPARING → SERVED)
+- Subscribes to `NEW_ORDER_RECEIVED` to insert arriving orders without a page reload
+- Subscribes to `ORDER_STATUS_UPDATED` to keep card states in sync when another KDS terminal makes a change
+- Shows a live connection indicator (green = connected, red = reconnecting)
+
+**`app/bill/[id]/OrderStatusTracker.tsx`** — Guest-facing tracker embedded in the bill page:
+- Receives `initialStatus` as a prop (from the server-rendered page)
+- Subscribes to `ORDER_STATUS_UPDATED` and advances the progress bar when the order ID matches
+- Three-step visual progress bar: Order Received → Preparing → Served
+
+### WebSocket request flow
+
+```
+Kitchen staff clicks "Start Preparing"
+    │
+    │  PATCH /api/orders/:id/status  { status: "PREPARING" }
+    ▼
+Node.js on Render
+    ├── prisma.order.update({ status: "PREPARING" })
+    └── io.emit("ORDER_STATUS_UPDATED", { id, status: "PREPARING" })
+         │
+         ├──► KDS page (/kitchen)         → card updates to blue "Preparing"
+         └──► Guest bill page (/bill/:id) → progress bar advances to step 2
+```
+
+### Deployment note
+
+Render's free tier uses a single instance, so Socket.io works without any adapter. If the service is scaled to multiple instances, a Redis adapter (`@socket.io/redis-adapter`) must be introduced so events broadcast across all instances.

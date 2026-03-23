@@ -1,5 +1,6 @@
 import prisma from '../config/prisma.js';
 import { sendWhatsAppReceipt } from '../services/whatsapp.js';
+import { getIO } from '../socket.js';
 
 // Mock order counter for generating sequential test IDs
 let orderCounter = 12345;
@@ -140,9 +141,15 @@ export const createOrder = async (req, res) => {
     console.log(`   Timestamp: ${new Date().toISOString()}`);
     console.log('✅ SMS sent successfully (simulated)');
 
-    res.status(201).json({ 
-      success: true, 
-      message: "Order logged!", 
+    // Emit to Kitchen Display System
+    const io = getIO();
+    if (io) {
+      io.emit('NEW_ORDER_RECEIVED', newOrder);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Order logged!",
       order: newOrder,
       posPayload: posPayload, // 🔥 INCLUDE POS PAYLOAD IN RESPONSE
       orderId: newOrder.id,
@@ -185,5 +192,38 @@ export const getBillById = async (req, res) => {
   } catch (error) {
     console.error("❌ Bill Fetch Error:", error);
     res.status(500).json({ success: false, error: "Error fetching bill details" });
+  }
+};
+
+// 4. UPDATE ORDER STATUS (Kitchen Display System)
+export const updateOrderStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const validStatuses = ['RECEIVED', 'PREPARING', 'SERVED'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Accepted values: ${validStatuses.join(', ')}`,
+      });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id },
+      data: { status },
+      include: { items: true },
+    });
+
+    // Push status change to all connected clients (bill page + KDS)
+    const io = getIO();
+    if (io) {
+      io.emit('ORDER_STATUS_UPDATED', { id: updatedOrder.id, status: updatedOrder.status });
+    }
+
+    res.status(200).json({ success: true, order: updatedOrder });
+  } catch (error) {
+    console.error('❌ Status Update Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };

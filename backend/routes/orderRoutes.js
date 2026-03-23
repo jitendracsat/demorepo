@@ -1,11 +1,12 @@
 import express from 'express';
-import { createOrder, getAllOrders, getBillById } from '../controllers/orderController.js';
+import { createOrder, getAllOrders, getBillById, updateOrderStatus } from '../controllers/orderController.js';
 
 const router = express.Router();
 
 // Routes definitions
-router.post('/', createOrder);          // API: POST /api/orders
-router.get('/', getAllOrders);          // API: GET /api/orders
-router.get('/:id', getBillById);        // API: GET /api/orders/:id (Digital Bill Link)
+router.post('/', createOrder);                  // POST /api/orders
+router.get('/', getAllOrders);                  // GET  /api/orders
+router.get('/:id', getBillById);               // GET  /api/orders/:id
+router.patch('/:id/status', updateOrderStatus); // PATCH /api/orders/:id/status (KDS)
 
 export default router;

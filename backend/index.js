@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
+import { initSocket } from './socket.js';
 import orderRoutes from './routes/orderRoutes.js';
 
 dotenv.config();
@@ -19,7 +21,11 @@ app.get('/api/health', (req, res) => {
 // API Routes Mounting
 app.use('/api/orders', orderRoutes);
 
+// Wrap Express with HTTP server and attach Socket.io
+const httpServer = createServer(app);
+initSocket(httpServer);
+
 // Server Start
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`🚀 MVC Server is running on http://localhost:${PORT}`);
 });

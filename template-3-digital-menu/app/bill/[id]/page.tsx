@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import ReceiptActions from './ReceiptActions';
+import OrderStatusTracker from './OrderStatusTracker';
 
 interface PageProps {
   params: Promise<{
@@ -28,6 +29,9 @@ export default async function BillPage({ params }: PageProps) {
             Order Confirmed
           </div>
         </div>
+
+        {/* Live Order Status Tracker */}
+        <OrderStatusTracker orderId={id} initialStatus="RECEIVED" />
 
         {/* Main Receipt Card */}
         <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
