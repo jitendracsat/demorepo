@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createOrder } from "../utils/api";
 
 export default function DemoPage() {
   const router = useRouter();
@@ -42,23 +43,15 @@ export default function DemoPage() {
         outletId: "OUT001"
       };
 
-      const result = await fetch('/api/demo-order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(orderData),
-      });
-      
-      const data = await result.json();
+      const data = await createOrder(orderData);
       
       console.log('🔍 Full API Result:', data);
       console.log('🔍 Success check:', data.success);
-      console.log('🔍 Order data:', data.orderData);
+      console.log('🔍 Order data:', data.order);
       
-      // ✅ FIXED: Check for data.success and data.orderId
-      if (data.success && data.orderId) {
-        const newOrderId = data.orderId;
+      // ✅ FIXED: Check for data.success and data.order.id
+      if (data.success && data.order) {
+        const newOrderId = data.order.id;
         console.log('✅ Order created successfully with ID:', newOrderId);
         setOrderId(newOrderId);
         
@@ -81,50 +74,35 @@ export default function DemoPage() {
       <div className="max-w-md mx-auto">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Digital Receipt Demo</h1>
         
+        {/* Test Order Creation */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Test Order Creation</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Create Test Order</h2>
+          <p className="text-gray-600 mb-4">
+            Click the button below to create a test order and see the digital receipt system in action.
+          </p>
+          <button
+            onClick={handleCreateTestOrder}
+            disabled={loading}
+            className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+              loading
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            {loading ? 'Creating Order...' : 'Create Test Order'}
+          </button>
           
-          {!orderId ? (
-            <div>
-              <p className="text-gray-600 mb-4">
-                Click the button below to create a test order. You'll be automatically redirected to view the digital receipt.
-              </p>
-              
-              <button
-                onClick={handleCreateTestOrder}
-                disabled={loading}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400"
-              >
-                {loading ? "Creating Order & Redirecting..." : "Create Test Order"}
-              </button>
-              
-              {error && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-red-600 text-sm">{error}</p>
-                </div>
-              )}
+          {error && (
+            <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+              {error}
             </div>
-          ) : (
-            <div>
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg mb-4">
-                <p className="text-green-600 text-sm">Order created successfully!</p>
-                <p className="text-xs text-gray-600 mt-1">Order ID: {orderId}</p>
-              </div>
-              
-              <a
-                href={`/bill/${orderId}`}
-                target="_blank"
-                className="block w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors text-center"
-              >
-                View Digital Receipt
-              </a>
-              
-              <button
-                onClick={() => setOrderId("")}
-                className="w-full mt-3 bg-gray-200 text-gray-800 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors"
-              >
-                Create Another Order
-              </button>
+          )}
+          
+          {orderId && (
+            <div className="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+              <p className="font-semibold">Order Created Successfully!</p>
+              <p className="text-sm">Order ID: {orderId}</p>
+              <p className="text-sm">You should be redirected automatically...</p>
             </div>
           )}
         </div>

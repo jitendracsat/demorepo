@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import FoodItem from "./FoodItem";
 import SpecialOffers from "./SpecialOffers";
 import CategoryMenuOverlay from "./CategoryMenuOverlay";
 import FilterOverlay from "./FilterOverlay";
+import SearchOverlay from "./SearchOverlay";
 import DishDetails from "./DishDetails";
 import ComboOfferOverlay from "./ComboOfferOverlay";
 import BogoOfferOverlay, { BogoOffer } from "./BogoOfferOverlay";
@@ -49,6 +50,11 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   const [category, setCategory] = useState("Food");
   const [tab, setTab] = useState(""); // Tab ab initial khali rahega
   const [selectedDish, setSelectedDish] = useState<any>(null);
+
+  // Advanced filter states
+  const [priceRange, setPriceRange] = useState(2000);
+  const [sortOrder, setSortOrder] = useState("low-to-high");
+  const [appliedFilters, setAppliedFilters] = useState<any>({});
 
   const [hasCustomFilters, setHasCustomFilters] = useState(false);
   const [filterCount, setFilterCount] = useState(0);
@@ -159,10 +165,53 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   const activeTabs = apiMenuData.length > 0 ? dynamicTabs : currentConfig.tabs;
   
   const currentPopularSearches = popularSearchesByCat[category] || popularSearchesByCat["Food"];
-  
+
+  // 🔥 HIGH-PERFORMANCE FILTERING WITH useMemo
+  const filteredItems = useMemo(() => {
+    let items = [...currentData];
+    
+    // 1. Search filter
+    if (searchQuery) {
+      items = items.filter(item => 
+        item.title.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    // 2. Category filter (Food/Drinks group cards)
+    items = items.filter(item => item.mainCategory === category);
+    
+    // 3. Tab filter (horizontal category tabs)
+    if (tab) {
+      items = items.filter(item => item.category === tab);
+    }
+    
+    // 4. Diet preference filter (ALL/VEG/NON-VEG)
+    if (category === "Food") {
+      if (filter === "VEG") {
+        items = items.filter(item => item.isVeg);
+      } else if (filter === "NON-VEG") {
+        items = items.filter(item => item.isNonVeg);
+      }
+    }
+    
+    // 5. Advanced filters - Price range
+    if (appliedFilters.priceRange !== undefined) {
+      items = items.filter(item => item.price <= appliedFilters.priceRange);
+    }
+    
+    // 6. Advanced filters - Sort order
+    if (appliedFilters.sortOrder === "high-to-low") {
+      items.sort((a, b) => b.price - a.price);
+    } else {
+      items.sort((a, b) => a.price - b.price);
+    }
+    
+    return items;
+  }, [currentData, searchQuery, category, tab, filter, appliedFilters]);
+
   const getFilteredSuggestions = () => {
     if (!searchQuery) return currentPopularSearches;
-    return currentData.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase())).map(item => item.title).slice(0, 5);
+    return filteredItems.map(item => item.title).slice(0, 5);
   };
 
   return (
@@ -234,22 +283,7 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
           )}
 
           <div className="flex flex-col gap-4 w-[347px]">
-            {currentData.filter(item => {
-              if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-              
-              // Filter by Tab (Very important so items don't disappear!)
-              if (item.category !== tab) return false; 
-              
-              if (category === "Food") {
-                if (filter === "VEG") return item.isVeg;
-                if (filter === "NON-VEG") return item.isNonVeg;
-                return true;
-              } else if (category === "Drinks") {
-                // Adjust this if drinks have a different filter logic in API
-                return true;
-              }
-              return true;
-            }).map((item, idx) => {
+            {filteredItems.map((item, idx) => {
               const itemId = item.id || `${item.title}-${idx}`;
               const cartItem = globalCart.find(i => i.id === itemId);
               
@@ -294,7 +328,9 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
 
       <CategoryMenuOverlay isOpen={isCategoryMenuOpen} onCloseAction={() => setIsCategoryMenuOpen(false)} onSelectCategoryAction={(cat) => setTab(cat)} currentCategory={category} />
       
-      <FilterOverlay isOpen={isFilterOpen} onCloseAction={() => setIsFilterOpen(false)} category={category} onApplyAction={(filters, count) => { setHasCustomFilters(true); setFilterCount(count); setIsFilterOpen(false); }} onClearAction={() => { setHasCustomFilters(false); setFilterCount(0); setIsFilterOpen(false); }} />
+      <SearchOverlay isOpen={isSearchOpen} onCloseAction={() => setIsSearchOpen(false)} searchQuery={searchQuery} setSearchQuery={setSearchQuery} suggestions={getFilteredSuggestions()} />
+      
+      <FilterOverlay isOpen={isFilterOpen} onCloseAction={() => setIsFilterOpen(false)} category={category} onApplyAction={(filters, count) => { setAppliedFilters(filters); setHasCustomFilters(true); setFilterCount(count); setIsFilterOpen(false); }} onClearAction={() => { setAppliedFilters({}); setHasCustomFilters(false); setFilterCount(0); setIsFilterOpen(false); }} />
       
       <DishDetails isOpen={!!selectedDish} dish={selectedDish} onCloseAction={() => setSelectedDish(null)} />
       <ComboOfferOverlay isOpen={isComboOverlayOpen} onClose={() => setIsComboOverlayOpen(false)} />

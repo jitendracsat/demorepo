@@ -1,4 +1,8 @@
 import prisma from '../config/prisma.js';
+import { sendWhatsAppReceipt } from '../services/whatsapp.js';
+
+// Mock order counter for generating sequential test IDs
+let orderCounter = 12345;
 
 // 1. PUNCH ORDER
 export const createOrder = async (req, res) => {
@@ -21,11 +25,11 @@ export const createOrder = async (req, res) => {
         items: {
   create: cartItems.map((item) => ({
     itemId: item.id?.toString() || item.itemId?.toString(), 
-    // 👇 Is line ko change karo (Ab ye itemName aur name dono ko pakad lega)
+    // 👇 This line has been updated to handle both itemName and name properties
     itemName: (item.itemName || item.name)?.toString() || "Unknown Item", 
     quantity: Number(item.quantity || 1),
     price: Number(item.price || 0),
-    // 👇 Isko bhi update kar do safety ke liye
+    // 👇 This line has been updated for safety to handle both instruction and instructions properties
     instruction: (item.instruction || item.instructions)?.toString() || "", 
   })),
 },
@@ -33,7 +37,35 @@ export const createOrder = async (req, res) => {
       include: { items: true },
     });
 
-    res.status(201).json({ success: true, message: "Order logged!", order: newOrder });
+    // Generate receipt URL and send WhatsApp message
+    const receiptUrl = `http://localhost:3000/bill/${newOrder.id}`;
+    const dummyPhoneNumber = '+91-98765-43210';
+    
+    // Send WhatsApp receipt with fallback logic
+    console.log('📱 Sending WhatsApp receipt...');
+    const whatsappResult = await sendWhatsAppReceipt(dummyPhoneNumber, receiptUrl);
+    
+    if (whatsappResult.success) {
+      console.log('✅ WhatsApp message sent successfully');
+    } else {
+      console.log('⚠️ WhatsApp message failed:', whatsappResult.error);
+    }
+    
+    // Simulate SMS gateway trigger (keeping for backward compatibility)
+    console.log('📱 Simulating SMS Gateway Trigger:');
+    console.log(`   To: ${dummyPhoneNumber}`);
+    console.log(`   Message: Your digital receipt is ready! View your order details: ${receiptUrl}`);
+    console.log(`   Order ID: ${newOrder.id}`);
+    console.log(`   Timestamp: ${new Date().toISOString()}`);
+    console.log('✅ SMS sent successfully (simulated)');
+
+    res.status(201).json({ 
+      success: true, 
+      message: "Order logged!", 
+      order: newOrder,
+      orderId: newOrder.id,
+      receiptUrl: receiptUrl
+    });
   } catch (error) {
     console.error("❌ Save Error:", error);
     res.status(500).json({ success: false, error: error.message });
