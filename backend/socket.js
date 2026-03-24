@@ -2,6 +2,9 @@ import { Server } from 'socket.io';
 
 let io = null;
 
+// In-memory Set to track sold-out items
+const soldOutItems = new Set();
+
 export const initSocket = (httpServer) => {
   const allowedOrigins = [
     'http://localhost:3000',
@@ -18,6 +21,24 @@ export const initSocket = (httpServer) => {
 
   io.on('connection', (socket) => {
     console.log(`🔌 KDS client connected: ${socket.id}`);
+    
+    // Send current stock state to newly connected client
+    socket.emit('INITIAL_STOCK_STATE', Array.from(soldOutItems));
+    
+    // Handle stock toggle requests
+    socket.on('TOGGLE_STOCK', ({ itemId, isSoldOut }) => {
+      console.log('Chef toggled item:', itemId, 'Type:', typeof itemId);
+      
+      if (isSoldOut) {
+        soldOutItems.add(itemId);
+      } else {
+        soldOutItems.delete(itemId);
+      }
+      
+      // Broadcast updated stock state to all clients
+      io.emit('STOCK_UPDATED', Array.from(soldOutItems));
+    });
+    
     socket.on('disconnect', () => {
       console.log(`🔌 KDS client disconnected: ${socket.id}`);
     });

@@ -168,6 +168,9 @@ export default function KitchenPage() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [testLoading, setTestLoading] = useState(false);
+  
+  // Quick Inventory Manager state
+  const [itemId, setItemId] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/orders`)
@@ -233,6 +236,15 @@ export default function KitchenPage() {
     );
   }, []);
 
+  // Stock toggle functions
+  const toggleStock = (isSoldOut: boolean) => {
+    if (!itemId.trim()) return;
+    
+    const socket = getSocket();
+    socket.emit('TOGGLE_STOCK', { itemId: itemId.trim(), isSoldOut });
+    setItemId(''); // Clear input after action
+  };
+
   useEffect(() => {
     const socket = getSocket();
 
@@ -284,6 +296,34 @@ export default function KitchenPage() {
       </header>
 
       <main className="p-6 max-w-7xl mx-auto">
+        {/* Quick Inventory Manager */}
+        <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Quick Inventory Manager</h3>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={itemId}
+              onChange={(e) => setItemId(e.target.value)}
+              placeholder="Enter Item ID"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={() => toggleStock(true)}
+              disabled={!itemId.trim()}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-sm font-semibold rounded-md transition-colors"
+            >
+              Mark Sold Out
+            </button>
+            <button
+              onClick={() => toggleStock(false)}
+              disabled={!itemId.trim()}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-sm font-semibold rounded-md transition-colors"
+            >
+              Mark Available
+            </button>
+          </div>
+        </section>
+
         {loading ? (
           <div className="text-center py-24 text-gray-400">Loading orders…</div>
         ) : fetchError ? (

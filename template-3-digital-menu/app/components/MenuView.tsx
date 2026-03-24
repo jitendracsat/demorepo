@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { getSocket } from "../lib/socket";
 import FoodItem from "./FoodItem";
 import SpecialOffers from "./SpecialOffers";
 import CategoryMenuOverlay from "./CategoryMenuOverlay";
@@ -32,6 +33,9 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   const [apiMenuData, setApiMenuData] = useState<any[]>([]);
   const [dynamicTabs, setDynamicTabs] = useState<string[]>([]);
   const [isLoadingMenu, setIsLoadingMenu] = useState(true);
+  
+  // Real-time stock state
+  const [soldOutItems, setSoldOutItems] = useState<string[]>([]);
 
   // Existing States
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -100,7 +104,13 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
             isVeg: item.is_veg === true,
             isNonVeg: item.is_veg === false,
             category: catName, // e.g., "Starters", "Pizza", "Aperitif & Liqueur"
-            mainCategory: topLevelCategory
+            mainCategory: topLevelCategory,
+            gst_details: item.gst_details || {
+              cgst: Number(item.cgst) || 0,
+              sgst: Number(item.sgst) || 0,
+              igst: Number(item.igst) || 0,
+              inclusive: item.inclusive || false
+            }
           };
         });
 
@@ -115,6 +125,27 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
     };
 
     fetchLiveMenu();
+  }, []);
+
+  // Socket listeners for real-time stock updates
+  useEffect(() => {
+    const socket = getSocket();
+    
+    // Listen for initial stock state when connecting
+    socket.on('INITIAL_STOCK_STATE', (stockItems: string[]) => {
+      setSoldOutItems(stockItems);
+    });
+    
+    // Listen for real-time stock updates
+    socket.on('STOCK_UPDATED', (stockItems: string[]) => {
+      console.log('Menu received sold out items:', stockItems);
+      setSoldOutItems(stockItems);
+    });
+    
+    return () => {
+      socket.off('INITIAL_STOCK_STATE');
+      socket.off('STOCK_UPDATED');
+    };
   }, []);
 
   // Update Dynamic Tabs when Data or Category (Food/Drinks) changes
@@ -139,13 +170,15 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
         return prev.map(i => i.id === id ? { ...i, quantity: newQ } : i);
       }
       if (delta > 0 && itemDetails) {
+        console.log('Adding item to cart with GST details:', itemDetails);
         return [...prev, {
           id,
           name: itemDetails.title,
           price: Number(itemDetails.price),
           quantity: 1,
           image: itemDetails.img,
-          description: itemDetails.desc
+          description: itemDetails.desc,
+          gst_details: itemDetails.gst_details
         }];
       }
       return prev;
@@ -328,6 +361,7 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
             {filteredItems.map((item, idx) => {
               const itemId = item.id || `${item.title}-${idx}`;
               const cartItem = globalCart.find(i => i.id === itemId);
+              const isSoldOut = soldOutItems.includes(String(itemId));
               
               return (
                 <FoodItem 
@@ -339,9 +373,14 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
                   img={item.img}
                   isVeg={item.isVeg || false}
                   isNonVeg={item.isNonVeg || false}
+                  isSoldOut={isSoldOut}
                   onClick={() => setSelectedDish(item)}
                   quantity={cartItem ? cartItem.quantity : 0}
-                  onAdd={(e) => { e.stopPropagation(); handleUpdateQuantity(itemId, 1, item); }}
+                  onAdd={(e) => { 
+                    console.log('The REAL ID of this clicked item is:', itemId, 'Type:', typeof itemId);
+                    e.stopPropagation(); 
+                    handleUpdateQuantity(itemId, 1, item); 
+                  }}
                   onIncrement={(e) => { e.stopPropagation(); handleUpdateQuantity(itemId, 1); }}
                   onDecrement={(e) => { e.stopPropagation(); handleUpdateQuantity(itemId, -1); }}
                 />

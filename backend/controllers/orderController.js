@@ -52,8 +52,8 @@ export const createOrder = async (req, res) => {
         
         // Order Financial Details
         subtotal: Number(billDetails?.subtotal || 0),
-        discountAmount: Number(billDetails?.discountAmount || 0),
-        taxAmount: Number(billDetails?.taxAmount || 0),
+        discountAmount: Number(billDetails?.discount || 0),
+        taxAmount: Number(billDetails?.taxAmount || billDetails?.taxes || 0),
         totalAmount: Number(billDetails?.total || 0),
         
         // Order Details

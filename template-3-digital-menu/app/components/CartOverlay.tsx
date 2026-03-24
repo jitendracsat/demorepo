@@ -12,7 +12,13 @@ export interface CartItem {
   description?: string;
   isOffer?: boolean;
   hasCustomizations?: boolean;
-  instructions?: string; 
+  instructions?: string;
+  gst_details?: {
+    cgst: number;
+    sgst: number;
+    igst?: number;
+    inclusive?: boolean;
+  };
 }
 
 export interface CartOverlayProps {
@@ -31,8 +37,16 @@ export default function CartOverlay({
   const [activeInstructionItem, setActiveInstructionItem] = useState<CartItem | null>(null);
 
   // Bill Calculations
+  console.log('Current Cart Items with Tax Info:', cartItems);
   const itemSubtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const taxesAndCharges = itemSubtotal * 0.09;
+  
+  // Dynamic tax calculation based on GST details
+  const taxesAndCharges = cartItems.reduce((totalTax, item) => {
+    const itemTaxPercent = (item.gst_details?.cgst || 0) + (item.gst_details?.sgst || 0) + (item.gst_details?.igst || 0);
+    const itemTaxAmount = (item.price * item.quantity) * (itemTaxPercent / 100);
+    return totalTax + itemTaxAmount;
+  }, 0);
+  
   const discount = itemSubtotal > 0 ? Math.min(itemSubtotal * 0.5, itemSubtotal) : 0;
   const totalSavings = discount;
   const totalAmount = itemSubtotal > 0 ? Math.max(0, itemSubtotal + taxesAndCharges - discount) : 0;

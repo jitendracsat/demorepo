@@ -10,6 +10,7 @@ export interface FoodItemProps {
   isVeg: boolean;
   isNonVeg: boolean;
   tag?: string;
+  isSoldOut?: boolean;
   onClick?: () => void;
   // ✨ FIX: Controlled Props from MenuView
   quantity?: number; 
@@ -19,7 +20,7 @@ export interface FoodItemProps {
 }
 
 export default function FoodItem({ 
-  title, price, time, desc, img, isVeg, isNonVeg, tag, onClick, 
+  title, price, time, desc, img, isVeg, isNonVeg, tag, onClick, isSoldOut, 
   quantity = 0, onAdd, onIncrement, onDecrement 
 }: FoodItemProps) {
   
@@ -67,7 +68,11 @@ export default function FoodItem({
         
         {/* ✨ Controlled Dynamic Add Button */}
         <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-[85%] z-10">
-          {quantity === 0 ? (
+          {isSoldOut ? (
+            <div className="w-full bg-red-50 text-red-600 font-bold text-[12px] py-1.5 rounded-xl border border-red-200 shadow-md flex items-center justify-center">
+              Sold Out
+            </div>
+          ) : quantity === 0 ? (
             <button 
               onClick={onAdd}
               className="w-full bg-white text-[#0B4F6C] font-bold text-[14px] py-1.5 rounded-xl border border-[#E6EDF3] shadow-md hover:bg-gray-50 active:scale-95 transition-all flex items-center justify-center gap-1"

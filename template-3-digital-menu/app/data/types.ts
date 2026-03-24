@@ -9,4 +9,10 @@ export interface MenuItem {
     isNonVeg?: boolean;
     isAlcoholic?: boolean;
     category: string;
+    gst_details?: {
+        cgst: number;
+        sgst: number;
+        igst?: number;
+        inclusive?: boolean;
+    };
 }
