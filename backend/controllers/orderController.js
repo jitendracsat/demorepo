@@ -104,15 +104,15 @@ export const createOrder = async (req, res) => {
       totalAmount: newOrder.totalAmount,
       paymentMethod: newOrder.paymentMethod || "",
       currency: newOrder.currency || "INR",
-      items: newOrder.items.map(item => ({
-        itemId: item.itemId,
-        itemName: item.itemName,
-        category: item.category,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.totalPrice,
+      items: cartItems.map(item => ({
+        itemId: item.id?.toString() || item.itemId?.toString(),
+        itemName: item.name?.toString() || item.itemName?.toString() || "Unknown Item",
+        category: item.category?.toString() || "Uncategorized",
+        quantity: Number(item.quantity || 1),
+        unitPrice: Number(item.price || 0),
+        totalPrice: Number((item.price || 0) * (item.quantity || 1)),
         modifiers: item.modifiers || [],
-        discountApplied: item.discountApplied || 0
+        discountApplied: Number(item.discountApplied || 0)
       }))
     };
 

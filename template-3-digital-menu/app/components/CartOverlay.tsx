@@ -33,9 +33,9 @@ export default function CartOverlay({
   // Bill Calculations
   const itemSubtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const taxesAndCharges = itemSubtotal * 0.09;
-  const discount = itemSubtotal > 0 ? 100 : 0;
+  const discount = itemSubtotal > 0 ? Math.min(itemSubtotal * 0.5, itemSubtotal) : 0;
   const totalSavings = discount;
-  const totalAmount = itemSubtotal > 0 ? itemSubtotal + taxesAndCharges - discount : 0;
+  const totalAmount = itemSubtotal > 0 ? Math.max(0, itemSubtotal + taxesAndCharges - discount) : 0;
 
   if (!isOpen) return null;
 
