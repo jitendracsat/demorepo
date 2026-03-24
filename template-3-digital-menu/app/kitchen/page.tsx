@@ -166,10 +166,15 @@ export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/orders`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Server returned ${r.status} ${r.statusText}`);
+        return r.json();
+      })
       .then((data: Order[]) => {
         const sorted = [...data].sort((a, b) => {
           const priority = { RECEIVED: 0, PREPARING: 1, SERVED: 2 };
@@ -179,9 +184,48 @@ export default function KitchenPage() {
         });
         setOrders(sorted);
       })
-      .catch(console.error)
+      .catch((err: Error) => {
+        console.error('KDS fetch error:', err);
+        setFetchError(`Cannot reach backend at ${API_BASE_URL}. ${err.message}`);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  const createTestOrder = async () => {
+    setTestLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cartItems: [
+            { id: '1059', name: 'Butter Chicken', price: 650, quantity: 2, category: 'Main Course' },
+            { id: '1060', name: 'Garlic Naan',    price: 60,  quantity: 3, category: 'Breads' },
+          ],
+          billDetails: {
+            subtotal: 1480,
+            taxAmount: 133.2,
+            discountAmount: 100,
+            total: 1513.2,
+          },
+          tableNumber: 'T-12',
+          paymentMethod: 'CASH',
+          outletId: '010',
+          restaurantId: '210014',
+          posCode: '001',
+          guestName: 'Test Guest',
+          guestPhone: '9876543210',
+        }),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      // Order will appear via the NEW_ORDER_RECEIVED socket event automatically
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Test order failed: ${msg}`);
+    } finally {
+      setTestLoading(false);
+    }
+  };
 
   const handleStatusChange = useCallback((id: string, newStatus: string) => {
     setOrders((prev) =>
@@ -224,15 +268,30 @@ export default function KitchenPage() {
           <h1 className="text-xl font-bold tracking-tight">Kitchen Display System</h1>
           <p className="text-gray-400 text-sm">Live order queue</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-400' : 'bg-red-500'}`} />
-          <span className="text-sm text-gray-300">{connected ? 'Live' : 'Reconnecting…'}</span>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={createTestOrder}
+            disabled={testLoading}
+            className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-gray-900 text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+          >
+            {testLoading ? 'Sending…' : '+ Create Test Order'}
+          </button>
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-400' : 'bg-red-500'}`} />
+            <span className="text-sm text-gray-300">{connected ? 'Live' : 'Reconnecting…'}</span>
+          </div>
         </div>
       </header>
 
       <main className="p-6 max-w-7xl mx-auto">
         {loading ? (
           <div className="text-center py-24 text-gray-400">Loading orders…</div>
+        ) : fetchError ? (
+          <div className="text-center py-24">
+            <p className="text-red-500 font-semibold text-lg mb-2">Failed to load orders</p>
+            <p className="text-gray-500 text-sm font-mono">{fetchError}</p>
+            <p className="text-gray-400 text-sm mt-4">Make sure the backend is running and <code className="bg-gray-200 px-1 rounded">NEXT_PUBLIC_API_BASE_URL</code> is set correctly in <code className="bg-gray-200 px-1 rounded">.env.local</code></p>
+          </div>
         ) : (
           <>
             <section>
