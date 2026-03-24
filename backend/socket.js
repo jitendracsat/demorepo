@@ -2,7 +2,9 @@ import { Server } from 'socket.io';
 
 let io = null;
 
-// In-memory Set to track sold-out items
+// TODO: DB_PERSISTENCE — Replace this in-memory Set with a Prisma query
+// e.g., prisma.menuItem.findMany({ where: { isSoldOut: true } })
+// The Set will not survive server restarts; a DB-backed solution is required for production.
 const soldOutItems = new Set();
 
 export const initSocket = (httpServer) => {
@@ -21,24 +23,28 @@ export const initSocket = (httpServer) => {
 
   io.on('connection', (socket) => {
     console.log(`🔌 KDS client connected: ${socket.id}`);
-    
-    // Send current stock state to newly connected client
+
+    // TODO: DB_PERSISTENCE — Replace with: const soldOutIds = await prisma.menuItem.findMany(...)
+    // Send current stock state to every newly connected client
     socket.emit('INITIAL_STOCK_STATE', Array.from(soldOutItems));
-    
-    // Handle stock toggle requests
+
+    // Handle stock toggle requests from KDS
     socket.on('TOGGLE_STOCK', ({ itemId, isSoldOut }) => {
-      console.log('Chef toggled item:', itemId, 'Type:', typeof itemId);
-      
+      // STRICT ID MATCHING: Always coerce to String to prevent Number vs String mismatches
+      const normalizedId = String(itemId);
+      console.log('Chef toggled item:', normalizedId, '(original type:', typeof itemId, ') → isSoldOut:', isSoldOut);
+
+      // TODO: DB_PERSISTENCE — Replace with: await prisma.menuItem.update({ where: { id: normalizedId }, data: { isSoldOut } })
       if (isSoldOut) {
-        soldOutItems.add(itemId);
+        soldOutItems.add(normalizedId);
       } else {
-        soldOutItems.delete(itemId);
+        soldOutItems.delete(normalizedId);
       }
-      
-      // Broadcast updated stock state to all clients
+
+      // Broadcast the full list of sold-out IDs to ALL connected clients (KDS + Guest menus)
       io.emit('STOCK_UPDATED', Array.from(soldOutItems));
     });
-    
+
     socket.on('disconnect', () => {
       console.log(`🔌 KDS client disconnected: ${socket.id}`);
     });

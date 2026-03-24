@@ -96,7 +96,7 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
             : "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150&q=80"; // Food Image
 
           return {
-            id: item.id,
+            id: String(item.id),  // Strict ID matching: always store as String
             title: item.name,
             price: Number(item.price || 0),
             desc: item.description?.trim() || "",

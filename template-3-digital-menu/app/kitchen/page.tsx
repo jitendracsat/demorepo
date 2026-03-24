@@ -171,6 +171,7 @@ export default function KitchenPage() {
   
   // Quick Inventory Manager state
   const [itemId, setItemId] = useState('');
+  const [soldOutItems, setSoldOutItems] = useState<string[]>([]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/orders`)
@@ -236,13 +237,13 @@ export default function KitchenPage() {
     );
   }, []);
 
-  // Stock toggle functions
+  // Stock toggle functions — coerce to String for strict ID matching
   const toggleStock = (isSoldOut: boolean) => {
     if (!itemId.trim()) return;
-    
+
     const socket = getSocket();
-    socket.emit('TOGGLE_STOCK', { itemId: itemId.trim(), isSoldOut });
-    setItemId(''); // Clear input after action
+    socket.emit('TOGGLE_STOCK', { itemId: String(itemId.trim()), isSoldOut });
+    setItemId('');
   };
 
   useEffect(() => {
@@ -262,11 +263,17 @@ export default function KitchenPage() {
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
     });
 
+    // Stock state listeners — keep KDS in sync with sold-out items
+    socket.on('INITIAL_STOCK_STATE', (items: string[]) => setSoldOutItems(items));
+    socket.on('STOCK_UPDATED', (items: string[]) => setSoldOutItems(items));
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
       socket.off('NEW_ORDER_RECEIVED');
       socket.off('ORDER_STATUS_UPDATED');
+      socket.off('INITIAL_STOCK_STATE');
+      socket.off('STOCK_UPDATED');
     };
   }, []);
 
@@ -322,6 +329,19 @@ export default function KitchenPage() {
               Mark Available
             </button>
           </div>
+          {soldOutItems.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <p className="text-xs font-semibold text-red-600 mb-1">Sold Out ({soldOutItems.length}):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {soldOutItems.map((id) => (
+                  <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-700 text-xs font-mono rounded-md border border-red-200">
+                    {id}
+                    <button onClick={() => { const s = getSocket(); s.emit('TOGGLE_STOCK', { itemId: String(id), isSoldOut: false }); }} className="text-red-400 hover:text-red-600 ml-0.5" title="Restore">&times;</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {loading ? (
