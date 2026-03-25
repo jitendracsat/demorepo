@@ -9,53 +9,73 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Guest Table (unique by phone number)
+model Guest {
+  id           String   @id @default(uuid())
+  guestId      String?  // External guest ID from CSAT
+  name         String?
+  phone        String   @unique // Primary dedup key
+  email        String?
+  dateOfBirth  String?
+  anniversary  String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders       Order[]
+}
+
 // Main Order Table
 model Order {
   id            String      @id @default(uuid())
-  
+
   // POS System Required Fields
   restaurantId  String?     // "restaurantid" in JSON
-  outletId      String?     // "outletId" in JSON  
+  outletId      String?     // "outletId" in JSON
   posCode       String?     // "PosCode" in JSON
-  orderId       String?     // "OrderId" in JSON - External POS Order ID
+  orderId       String?     @unique // "OrderId" in JSON - External POS Order ID (unique to prevent duplicate syncs)
   orderDate     DateTime?   // "OrderDate" in JSON
-  
-  // Guest Information (flattened from guest object)
+
+  // Guest FK (linked to Guest table)
+  guestDbId     String?
+  guest         Guest?      @relation(fields: [guestDbId], references: [id])
+
+  // Guest Information (flattened — kept for backward compat with existing code)
   guestId       String?     // "guest.guestId"
   guestName     String?     // "guest.name"
   guestPhone    String?     // "guest.phone"
   guestEmail    String?     // "guest.email"
   guestDob      String?     // "guest.dateOfBirth"
   guestAnniversary String?  // "guest.anniversary"
-  
+
   // Order Financial Details
   subtotal      Float?      // "subtotal" in JSON
   discountAmount Float?     // "discountAmount" in JSON
   taxAmount     Float?      // "taxAmount" in JSON
   totalAmount   Float?      // "totalAmount" in JSON
-  
+
   // Order Details
   tableNumber   String?     // "TblNo" in JSON
   paymentMethod String?     // "paymentMethod" in JSON
   currency      String?     // "currency" in JSON
-  status        String      @default("RECEIVED") 
-  csatSyncStatus Boolean    @default(false) 
+  status        String      @default("RECEIVED")
+  csatSyncStatus Boolean    @default(false)
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   // Relation: Ek order mein multiple items ho sakte hain
-  items         OrderItem[] 
+  items         OrderItem[]
 }
 
 // Order Items Table (Dishes)
 model OrderItem {
   id          String   @id @default(uuid())
-  
+
   // Relation link to main Order
   orderId     String
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  
+
   // POS System Required Fields
   itemId      String   // "itemId" in JSON
   itemName    String   // "itemName" in JSON
@@ -64,10 +84,16 @@ model OrderItem {
   unitPrice   Float?   // "unitPrice" in JSON
   totalPrice  Float?   // "totalPrice" in JSON
   discountApplied Float? // "discountApplied" in JSON
-  
+
+  // GST Tax Details (dynamic, never hardcoded)
+  cgstRate    Float?   // from gst_details.cgst
+  sgstRate    Float?   // from gst_details.sgst
+  cgstAmount  Float?   // calculated: totalPrice * cgstRate / 100
+  sgstAmount  Float?   // calculated: totalPrice * sgstRate / 100
+
   // Modifiers stored as JSON array
   modifiers    Json?    // "modifiers" array in JSON
-  
+
   // Legacy field for backward compatibility
   price       Float?   // Keep for existing code
   instruction String?  // Keep for existing code

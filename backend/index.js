@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { initSocket } from './socket.js';
 import orderRoutes from './routes/orderRoutes.js';
+import syncRoutes from './routes/syncRoutes.js';
 
 dotenv.config();
 
@@ -24,7 +25,7 @@ app.use(cors({
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Secret'],
 }));
 app.use(express.json());
 
@@ -35,6 +36,7 @@ app.get('/api/health', (req, res) => {
 
 // API Routes Mounting
 app.use('/api/orders', orderRoutes);
+app.use('/api/syncorder', syncRoutes);
 
 // Wrap Express with HTTP server and attach Socket.io
 const httpServer = createServer(app);
