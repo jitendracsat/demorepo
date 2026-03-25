@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { initSocket } from './socket.js';
 import orderRoutes from './routes/orderRoutes.js';
 import syncRoutes from './routes/syncRoutes.js';
+import whatsappRoutes from './routes/whatsappRoutes.js';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.get('/api/health', (req, res) => {
 // API Routes Mounting
 app.use('/api/orders', orderRoutes);
 app.use('/api/syncorder', syncRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 
 // Wrap Express with HTTP server and attach Socket.io
 const httpServer = createServer(app);

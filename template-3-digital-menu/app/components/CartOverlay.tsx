@@ -13,6 +13,7 @@ export interface CartItem {
   isOffer?: boolean;
   hasCustomizations?: boolean;
   instructions?: string;
+  discountApplied?: number; // POS item-level discount
   gst_details?: {
     cgst: number;
     sgst: number;
@@ -47,7 +48,11 @@ export default function CartOverlay({
     return totalTax + itemTaxAmount;
   }, 0);
   
-  const discount = itemSubtotal > 0 ? Math.min(itemSubtotal * 0.5, itemSubtotal) : 0;
+  // Calculate discount from real POS data (item-level discounts)
+  const discount = cartItems.reduce((totalDiscount, item) => {
+    const itemDiscount = item.discountApplied || 0;
+    return totalDiscount + itemDiscount;
+  }, 0);
   const totalSavings = discount;
   const totalAmount = itemSubtotal > 0 ? Math.max(0, itemSubtotal + taxesAndCharges - discount) : 0;
 
@@ -157,7 +162,7 @@ export default function CartOverlay({
             </div>
             <button 
               disabled={cartItems.length === 0}
-              onClick={() => onPlaceOrder(cartItems, { subtotal: itemSubtotal, taxes: taxesAndCharges, discount: discount, total: totalAmount })}
+              onClick={() => onPlaceOrder(cartItems, { subtotal: itemSubtotal, taxAmount: taxesAndCharges, discountAmount: discount, total: totalAmount })}
               className={`px-5 py-2.5 rounded-full flex items-center gap-1.5 transition-all shadow-sm ${cartItems.length > 0 ? 'bg-white active:scale-95' : 'bg-gray-300 opacity-50'}`}
             >
               <span className={`font-bold text-[14px] ${cartItems.length > 0 ? 'text-[#0B4F6C]' : 'text-gray-500'}`}>Place Order</span>

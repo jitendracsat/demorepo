@@ -89,7 +89,7 @@ export default function OrderSummaryView({ isOpen, cartItems, billDetails, onBac
               
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Taxes & Charges</span>
-                <span className="text-gray-900">₹{billDetails?.taxes?.toFixed(2) || '0.00'}</span>
+                <span className="text-gray-900">₹{billDetails?.taxAmount?.toFixed(2) || '0.00'}</span>
               </div>
               
               <div className="flex justify-between text-sm">
@@ -99,7 +99,7 @@ export default function OrderSummaryView({ isOpen, cartItems, billDetails, onBac
               
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Total Savings</span>
-                <span className="text-green-600 font-medium">₹{billDetails?.discount?.toFixed(2) || '0.00'}</span>
+                <span className="text-green-600 font-medium">₹{billDetails?.discountAmount?.toFixed(2) || '0.00'}</span>
               </div>
               
               {/* Dotted Divider */}

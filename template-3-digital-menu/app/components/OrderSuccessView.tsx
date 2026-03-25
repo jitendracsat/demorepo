@@ -6,8 +6,8 @@ export interface OrderSuccessProps {
   cartItems: any[];
   billDetails: {
     subtotal: number;
-    taxes: number;
-    discount: number;
+    taxAmount: number;
+    discountAmount: number;
     total: number;
   };
   // Naya prop add kiya hai jisse backend se time set kar sako (default 20 mins)
@@ -115,12 +115,12 @@ export default function OrderSuccessView({
               
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 font-medium">Taxes & Charges</span>
-                <span className="font-bold text-[#4A4A4A]">₹{billDetails.taxes.toFixed(2)}</span>
+                <span className="font-bold text-[#4A4A4A]">₹{billDetails.taxAmount.toFixed(2)}</span>
               </div>
               
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 font-medium">Total Savings</span>
-                <span className="font-bold text-green-600">₹{billDetails.discount.toFixed(2)}</span>
+                <span className="font-bold text-green-600">₹{billDetails.discountAmount.toFixed(2)}</span>
               </div>
               
               {/* Dashed Divider for a receipt feel */}
