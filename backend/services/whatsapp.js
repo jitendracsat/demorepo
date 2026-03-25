@@ -90,9 +90,10 @@ export async function sendOrderConfirmation(phoneNumber, orderDetails) {
       return { success: true, messageId };
     }
 
-    // Template not found → try hello_world
-    if (data.error?.code === 132000 || data.error?.message?.includes('template')) {
-      console.log('[WA] order_confirmation template not found. Trying hello_world...');
+    // Template not found (132000, 132001) or any template error → try hello_world
+    const errCode = data.error?.code;
+    if (errCode === 132000 || errCode === 132001 || data.error?.message?.includes('template')) {
+      console.log(`[WA] order_confirmation failed (code ${errCode}). Falling back to hello_world...`);
       return sendHelloWorld(to, apiUrl, token);
     }
 
