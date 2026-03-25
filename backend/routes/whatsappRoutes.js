@@ -31,8 +31,13 @@ router.get('/webhook', (req, res) => {
 router.post('/webhook', (req, res) => {
   const body = req.body;
 
+  console.log('\n========== [WEBHOOK] INCOMING WHATSAPP WEBHOOK ==========');
+  console.log('[WEBHOOK] Timestamp:', new Date().toISOString());
+  console.log('[WEBHOOK] Full body:', JSON.stringify(body, null, 2));
+
   // Meta always sends object with "object": "whatsapp_business_account"
   if (body.object !== 'whatsapp_business_account') {
+    console.log('[WEBHOOK] Ignored — not a whatsapp_business_account object');
     return res.sendStatus(404);
   }
 

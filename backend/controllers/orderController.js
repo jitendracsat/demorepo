@@ -5,7 +5,9 @@ import { getIO } from '../socket.js';
 // 1. PUNCH ORDER
 export const createOrder = async (req, res) => {
   try {
-    console.log('📥 Incoming order request body:', JSON.stringify(req.body, null, 2));
+    console.log('\n========== [ORDER CONTROLLER] NEW ORDER REQUEST ==========');
+    console.log('[ORDER CTRL] Timestamp:', new Date().toISOString());
+    console.log('[ORDER CTRL] Request body:', JSON.stringify(req.body, null, 2));
 
     const {
       cartItems,
@@ -121,22 +123,28 @@ export const createOrder = async (req, res) => {
     // Send WhatsApp order confirmation to guest's actual phone number
     const customerPhone = guestPhone || '';
 
+    console.log('\n---------- [ORDER CTRL] WHATSAPP STEP ----------');
+    console.log('[ORDER CTRL] guestPhone from request:', guestPhone);
+    console.log('[ORDER CTRL] customerPhone resolved to:', customerPhone);
+
     if (customerPhone) {
-      console.log(`📱 Sending WhatsApp order confirmation to ${customerPhone}...`);
-      const whatsappResult = await sendOrderConfirmation(customerPhone, {
+      const whatsappPayload = {
         orderId: externalOrderId,
         totalAmount: newOrder.totalAmount,
         tableNumber: newOrder.tableNumber || 'Takeaway',
         itemCount: cartItems.length,
-      });
+      };
+      console.log('[ORDER CTRL] Calling sendOrderConfirmation with:', JSON.stringify({ phone: customerPhone, orderDetails: whatsappPayload }, null, 2));
+      const whatsappResult = await sendOrderConfirmation(customerPhone, whatsappPayload);
+      console.log('[ORDER CTRL] WhatsApp result:', JSON.stringify(whatsappResult, null, 2));
 
       if (whatsappResult.success) {
-        console.log('✅ WhatsApp order confirmation sent successfully');
+        console.log('[ORDER CTRL] ✅ WhatsApp order confirmation sent successfully');
       } else {
-        console.log('⚠️ WhatsApp message failed:', whatsappResult.error);
+        console.log('[ORDER CTRL] ⚠️ WhatsApp message failed:', whatsappResult.error);
       }
     } else {
-      console.log('⚠️ No guest phone provided, skipping WhatsApp notification');
+      console.log('[ORDER CTRL] ⚠️ No guest phone provided, skipping WhatsApp notification');
     }
 
     // Emit to Kitchen Display System

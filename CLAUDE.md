@@ -28,6 +28,7 @@ This file is the absolute instruction set for the AI agent. These rules OVERRIDE
 - **Dependency Installs:** Briefly explain WHY a package is needed before running `npm install`. No silent installs.
 - **Prisma Edits:** If `schema.prisma` is modified, you MUST remind the user to run `npx prisma generate` and `npx prisma db push`.
 - **File Edits:** Prefer editing existing files. Do not create new files unless architecturally required.
+- **NEVER touch `.env` files.** The user manages environment variables themselves. Do not edit, overwrite, or suggest changes to `.env` files.
 
 ## 6. CUSTOM CLI COMMANDS
 - `/sync-db`: Remind user to run `cd backend && npx prisma generate && npx prisma db push`.

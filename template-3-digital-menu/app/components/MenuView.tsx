@@ -424,7 +424,7 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
         if (isPlacingOrder) return;
         setIsPlacingOrder(true);
         try {
-          const result = await createOrder({
+          const payload = {
             cartItems: items.map(item => ({
               id: String(item.id),
               itemId: String(item.id),
@@ -436,11 +436,16 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
             billDetails: { subtotal: bill.subtotal, taxAmount: bill.taxAmount, discount: bill.discountAmount, total: bill.total },
             tableNumber: "12",
             guestPhone,
-          });
+          };
+          console.log("[FRONTEND] === PLACE ORDER TRIGGERED ===");
+          console.log("[FRONTEND] API Base URL:", process.env.NEXT_PUBLIC_API_BASE_URL);
+          console.log("[FRONTEND] Payload being sent to POST /api/orders:", JSON.stringify(payload, null, 2));
+          const result = await createOrder(payload);
+          console.log("[FRONTEND] API Response:", JSON.stringify(result, null, 2));
           if (result.success) {
-            console.log("Order created, WhatsApp sent to:", guestPhone);
+            console.log("[FRONTEND] Order created successfully. WhatsApp target:", guestPhone);
           } else {
-            console.error("Order creation failed:", result.error);
+            console.error("[FRONTEND] Order creation FAILED:", result.error);
           }
         } catch (err) {
           console.error("Order API error:", err);
