@@ -83,7 +83,7 @@ export default function DemoPage() {
           total: 15071.0,
           subtotal: 11395.0,
           taxAmount: 3676.02,
-          discountAmount: 0.0
+          discount: 0.0
         }
       };
 
