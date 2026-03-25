@@ -133,10 +133,22 @@ export const syncOrder = async (req, res) => {
       io.emit('NEW_ORDER_RECEIVED', newOrder);
     }
 
-    return res.status(201).json({
-      success: true,
-      message: 'Order synced successfully',
-      order: newOrder,
+    return res.status(200).json({
+      message: "Order received",
+      data: {
+        outletId: newOrder.outletId,
+        restaurantId: newOrder.restaurantId,
+        posCode: newOrder.posCode,
+        insertedAt: new Date().toISOString(),
+        result: {
+          success: true,
+          orderId: newOrder.orderId,
+          table: newOrder.tableNumber,
+          items: newOrder.items.length,
+          message: `Order ${newOrder.orderId} Table ${newOrder.tableNumber} inserted successfully` 
+        }
+      },
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('❌ Sync Order Error:', error);
