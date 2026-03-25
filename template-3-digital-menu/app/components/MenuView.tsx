@@ -15,6 +15,7 @@ import CartOverlay, { CartItem } from "./CartOverlay";
 import OrderSummaryView from "./OrderSummaryView";
 import PaymentView from "./PaymentView";
 import OrderSuccessView from "./OrderSuccessView";
+import { createOrder } from "../utils/api";
 
 // Nayi API service import kar li (Path apne hisaab se adjust kar lena agar services folder bahar hai)
 import { csatApi } from "../../src/services/api"; 
@@ -48,6 +49,7 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   
   const [orderData, setOrderData] = useState<{items: any[], bill: any} | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<'cart' | 'summary' | 'payment' | 'success' | null>(null);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   
   // Enhanced State Management for High-Performance Filtering
   const [searchQuery, setSearchQuery] = useState("");
@@ -418,7 +420,38 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       <BogoOfferOverlay isOpen={bogoOfferState.isOpen} offer={bogoOfferState.offer} onClose={() => setBogoOfferState({isOpen: false, offer: null})} />
       <DiscountOfferOverlay isOpen={discountOfferState.isOpen} offer={discountOfferState.offer} onClose={() => setDiscountOfferState({isOpen: false, offer: null})} />
       
-      <CartOverlay isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} cartItems={globalCart} updateQuantity={handleUpdateQuantity} handleSaveInstructions={handleSaveGlobalInstructions} onPlaceOrder={(items, bill) => { setOrderData({items, bill}); setCheckoutStep('success'); setIsCartOpen(false); setGlobalCart([]); }} />
+      <CartOverlay isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} cartItems={globalCart} updateQuantity={handleUpdateQuantity} handleSaveInstructions={handleSaveGlobalInstructions} onPlaceOrder={async (items, bill, guestPhone) => {
+        if (isPlacingOrder) return;
+        setIsPlacingOrder(true);
+        try {
+          const result = await createOrder({
+            cartItems: items.map(item => ({
+              id: String(item.id),
+              itemId: String(item.id),
+              itemName: item.name,
+              quantity: item.quantity,
+              price: item.price,
+              instruction: item.instructions || "",
+            })),
+            billDetails: { subtotal: bill.subtotal, taxAmount: bill.taxAmount, discount: bill.discountAmount, total: bill.total },
+            tableNumber: "12",
+            guestPhone,
+          });
+          if (result.success) {
+            console.log("Order created, WhatsApp sent to:", guestPhone);
+          } else {
+            console.error("Order creation failed:", result.error);
+          }
+        } catch (err) {
+          console.error("Order API error:", err);
+        } finally {
+          setIsPlacingOrder(false);
+        }
+        setOrderData({items, bill});
+        setCheckoutStep('success');
+        setIsCartOpen(false);
+        setGlobalCart([]);
+      }} />
       
       {checkoutStep === 'success' && (
         <OrderSuccessView cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} onBackToMenu={() => { setCheckoutStep(null); setOrderData(null); }} onViewBill={() => setCheckoutStep('summary')} />

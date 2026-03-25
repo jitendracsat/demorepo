@@ -1,20 +1,19 @@
 import prisma from '../config/prisma.js';
-import { sendWhatsAppReceipt } from '../services/whatsapp.js';
+import { sendOrderConfirmation } from '../services/whatsapp.js';
 import { getIO } from '../socket.js';
-
-// Mock order counter for generating sequential test IDs
-let orderCounter = 12345;
 
 // 1. PUNCH ORDER
 export const createOrder = async (req, res) => {
   try {
-    const { 
-      cartItems, 
-      billDetails, 
-      tableNumber, 
-      paymentMethod, 
-      outletId, 
-      restaurantId, 
+    console.log('📥 Incoming order request body:', JSON.stringify(req.body, null, 2));
+
+    const {
+      cartItems,
+      billDetails,
+      tableNumber,
+      paymentMethod,
+      outletId,
+      restaurantId,
       posCode,
       // New guest information fields
       guestId,
@@ -29,8 +28,8 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: "Cart khali hai!" });
     }
 
-    // Generate external Order ID for POS system
-    const externalOrderId = `ORD${String(orderCounter++).padStart(6, '0')}`;
+    // Generate unique external Order ID using timestamp to avoid collisions on restart
+    const externalOrderId = `ORD${Date.now().toString(36).toUpperCase()}`;
     const currentOrderDate = new Date().toISOString();
 
     const newOrder = await prisma.order.create({
@@ -119,27 +118,26 @@ export const createOrder = async (req, res) => {
     // 🔥 LOG FOR MENTOR - CRITICAL!
     console.log("🔥 EXACT POS PAYLOAD GENERATED:\n", JSON.stringify(posPayload, null, 2));
 
-    // Generate receipt URL and send WhatsApp message
-    const receiptUrl = `http://localhost:3000/bill/${newOrder.id}`;
-    const dummyPhoneNumber = '+91-98765-43210';
-    
-    // Send WhatsApp receipt with fallback logic
-    console.log('📱 Sending WhatsApp receipt...');
-    const whatsappResult = await sendWhatsAppReceipt(dummyPhoneNumber, receiptUrl);
-    
-    if (whatsappResult.success) {
-      console.log('✅ WhatsApp message sent successfully');
+    // Send WhatsApp order confirmation to guest's actual phone number
+    const customerPhone = guestPhone || '';
+
+    if (customerPhone) {
+      console.log(`📱 Sending WhatsApp order confirmation to ${customerPhone}...`);
+      const whatsappResult = await sendOrderConfirmation(customerPhone, {
+        orderId: externalOrderId,
+        totalAmount: newOrder.totalAmount,
+        tableNumber: newOrder.tableNumber || 'Takeaway',
+        itemCount: cartItems.length,
+      });
+
+      if (whatsappResult.success) {
+        console.log('✅ WhatsApp order confirmation sent successfully');
+      } else {
+        console.log('⚠️ WhatsApp message failed:', whatsappResult.error);
+      }
     } else {
-      console.log('⚠️ WhatsApp message failed:', whatsappResult.error);
+      console.log('⚠️ No guest phone provided, skipping WhatsApp notification');
     }
-    
-    // Simulate SMS gateway trigger (keeping for backward compatibility)
-    console.log('📱 Simulating SMS Gateway Trigger:');
-    console.log(`   To: ${dummyPhoneNumber}`);
-    console.log(`   Message: Your digital receipt is ready! View your order details: ${receiptUrl}`);
-    console.log(`   Order ID: ${newOrder.id}`);
-    console.log(`   Timestamp: ${new Date().toISOString()}`);
-    console.log('✅ SMS sent successfully (simulated)');
 
     // Emit to Kitchen Display System
     const io = getIO();
@@ -152,8 +150,7 @@ export const createOrder = async (req, res) => {
       message: "Order logged!",
       order: newOrder,
       posPayload: posPayload, // 🔥 INCLUDE POS PAYLOAD IN RESPONSE
-      orderId: newOrder.id,
-      receiptUrl: receiptUrl
+      orderId: newOrder.id
     });
   } catch (error) {
     console.error("❌ Save Error:", error);

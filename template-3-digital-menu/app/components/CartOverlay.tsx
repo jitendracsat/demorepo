@@ -29,13 +29,14 @@ export interface CartOverlayProps {
   cartItems: CartItem[];
   updateQuantity: (id: string, delta: number) => void;
   handleSaveInstructions: (id: string, text: string) => void;
-  onPlaceOrder: (items: any[], bill: any) => void;
+  onPlaceOrder: (items: any[], bill: any, guestPhone: string) => void;
 }
 
 export default function CartOverlay({ 
   isOpen, onClose, cartItems, updateQuantity, handleSaveInstructions, onPlaceOrder 
 }: CartOverlayProps) {
   const [activeInstructionItem, setActiveInstructionItem] = useState<CartItem | null>(null);
+  const [guestPhone, setGuestPhone] = useState("");
 
   // Bill Calculations
   console.log('Current Cart Items with Tax Info:', cartItems);
@@ -155,17 +156,31 @@ export default function CartOverlay({
 
         {/* Sticky Footer */}
         <div className="flex-shrink-0 w-full bg-[#FAF7F2] p-5 pt-2 border-t border-gray-200/60 z-10 box-border">
+          {/* Phone Number Input */}
+          {cartItems.length > 0 && (
+            <div className="mb-3 flex items-center gap-2 bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm">
+              <span className="text-[14px] text-gray-400">+91</span>
+              <input
+                type="tel"
+                maxLength={10}
+                value={guestPhone}
+                onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                placeholder="Enter WhatsApp number"
+                className="flex-1 text-[14px] text-[#333] outline-none bg-transparent placeholder:text-gray-300 font-medium"
+              />
+            </div>
+          )}
           <div className="bg-[#0B4F6C] rounded-[16px] p-4 flex items-center justify-between shadow-lg">
             <div className="flex flex-col">
               <span className="text-[10px] font-semibold text-white/70 tracking-wider mb-0.5">TOTAL AMOUNT</span>
               <span className="text-[18px] font-bold text-white leading-tight">₹{totalAmount.toFixed(2)}</span>
             </div>
-            <button 
-              disabled={cartItems.length === 0}
-              onClick={() => onPlaceOrder(cartItems, { subtotal: itemSubtotal, taxAmount: taxesAndCharges, discountAmount: discount, total: totalAmount })}
-              className={`px-5 py-2.5 rounded-full flex items-center gap-1.5 transition-all shadow-sm ${cartItems.length > 0 ? 'bg-white active:scale-95' : 'bg-gray-300 opacity-50'}`}
+            <button
+              disabled={cartItems.length === 0 || guestPhone.length !== 10}
+              onClick={() => onPlaceOrder(cartItems, { subtotal: itemSubtotal, taxAmount: taxesAndCharges, discountAmount: discount, total: totalAmount }, guestPhone)}
+              className={`px-5 py-2.5 rounded-full flex items-center gap-1.5 transition-all shadow-sm ${cartItems.length > 0 && guestPhone.length === 10 ? 'bg-white active:scale-95' : 'bg-gray-300 opacity-50'}`}
             >
-              <span className={`font-bold text-[14px] ${cartItems.length > 0 ? 'text-[#0B4F6C]' : 'text-gray-500'}`}>Place Order</span>
+              <span className={`font-bold text-[14px] ${cartItems.length > 0 && guestPhone.length === 10 ? 'text-[#0B4F6C]' : 'text-gray-500'}`}>Place Order</span>
             </button>
           </div>
         </div>

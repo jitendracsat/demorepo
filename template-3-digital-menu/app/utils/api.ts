@@ -71,8 +71,8 @@ export async function healthCheck(): Promise<{ status: string; message: string }
 // Create a new order
 export async function createOrder(orderData: {
   cartItems: OrderItem[];
-  billDetails: { 
-    total: number; 
+  billDetails: {
+    total: number;
     subtotal: number;
     taxAmount: number;
     discount: number;
@@ -81,6 +81,7 @@ export async function createOrder(orderData: {
   paymentMethod?: string;
   restaurantId?: string;
   outletId?: string;
+  guestPhone?: string;
 }): Promise<ApiResponse<OrderData>> {
   try {
     console.log('🚀 Creating order with data:', orderData);
