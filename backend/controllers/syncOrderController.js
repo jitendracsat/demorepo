@@ -1,6 +1,6 @@
 import prisma from '../config/prisma.js';
 import { getIO } from '../socket.js';
-import { sendOrderConfirmation } from '../services/whatsapp.js';
+import { sendOTP } from '../services/whatsapp.js';
 
 /**
  * POST /api/syncorder
@@ -134,16 +134,13 @@ export const syncOrder = async (req, res) => {
       io.emit('NEW_ORDER_RECEIVED', newOrder);
     }
 
-    // --- Send WhatsApp order confirmation (non-blocking) ---
+    // --- Send WhatsApp OTP (non-blocking) ---
     if (guestData.phone) {
-      sendOrderConfirmation(guestData.phone, {
-        orderId: newOrder.orderId,
-        totalAmount: newOrder.totalAmount,
-        tableNumber: newOrder.tableNumber,
-        itemCount: newOrder.items.length,
-      }).then(result => {
-        if (result.success) console.log(`📱 WhatsApp sent for order ${newOrder.orderId}`);
-        else console.log(`⚠️ WhatsApp failed for order ${newOrder.orderId}:`, result.error);
+      sendOTP(guestData.phone).then(result => {
+        if (result.success) console.log(`[WHATSAPP] OTP sent for order ${newOrder.orderId}`);
+        else console.log(`[WHATSAPP] OTP failed for order ${newOrder.orderId}:`, result.error);
+      }).catch(err => {
+        console.error(`[WHATSAPP] OTP error for order ${newOrder.orderId}:`, err.message);
       });
     }
 
