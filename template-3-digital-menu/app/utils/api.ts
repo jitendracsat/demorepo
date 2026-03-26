@@ -1,5 +1,7 @@
 // API utility functions for the digital menu
 
+console.log('🔍 ENV CHECK ON VERCEL:', { API_URL: process.env.NEXT_PUBLIC_API_BASE_URL, PROXY_SECRET: process.env.NEXT_PUBLIC_PROXY_SECRET });
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "https://demorepo-63lo.onrender.com";
 
 export interface OrderItem {
