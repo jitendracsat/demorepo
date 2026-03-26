@@ -24,12 +24,17 @@ This file is the absolute instruction set for the AI agent. These rules OVERRIDE
   - `NEW_ORDER_RECEIVED`: Broadcasts full Order object on DB save.
   - `ORDER_STATUS_UPDATED`: Broadcasts `{ id, status }` on DB update.
 
-## 5. AGENT BEHAVIOR & GUARDRAILS
+## 5. DO NOT TOUCH — PERFECTLY WORKING CODE
+- **Backend controllers, routes, WhatsApp service, and POS integration are fully tested and production-ready.** DO NOT modify, refactor, format, or touch any backend files (`backend/controllers/`, `backend/routes/`, `backend/services/`, `backend/socket.js`, `backend/index.js`).
+- **Frontend POS sync now goes directly to the proxy at `https://proxy.csatspl.com/api/syncorder`.** The proxy handles forwarding to the backend. Do not revert this to a direct backend call.
+
+## 6. AGENT BEHAVIOR & GUARDRAILS
+
 - **Dependency Installs:** Briefly explain WHY a package is needed before running `npm install`. No silent installs.
 - **Prisma Edits:** If `schema.prisma` is modified, you MUST remind the user to run `npx prisma generate` and `npx prisma db push`.
 - **File Edits:** Prefer editing existing files. Do not create new files unless architecturally required.
 - **NEVER touch `.env` files.** The user manages environment variables themselves. Do not edit, overwrite, or suggest changes to `.env` files.
 
-## 6. CUSTOM CLI COMMANDS
+## 7. CUSTOM CLI COMMANDS
 - `/sync-db`: Remind user to run `cd backend && npx prisma generate && npx prisma db push`.
 - `/audit-socket`: Verify `backend/socket.js` and frontend listeners match the event contracts exactly.

@@ -15,7 +15,7 @@ import CartOverlay, { CartItem } from "./CartOverlay";
 import OrderSummaryView from "./OrderSummaryView";
 import PaymentView from "./PaymentView";
 import OrderSuccessView from "./OrderSuccessView";
-import { createOrder } from "../utils/api";
+import { createOrder, syncOrderToProxy } from "../utils/api";
 
 // Nayi API service import kar li (Path apne hisaab se adjust kar lena agar services folder bahar hai)
 import { csatApi } from "../../src/services/api"; 
@@ -50,6 +50,7 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   const [orderData, setOrderData] = useState<{items: any[], bill: any} | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<'cart' | 'summary' | 'payment' | 'success' | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
   
   // Enhanced State Management for High-Performance Filtering
   const [searchQuery, setSearchQuery] = useState("");
@@ -423,8 +424,9 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       <CartOverlay isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} cartItems={globalCart} updateQuantity={handleUpdateQuantity} handleSaveInstructions={handleSaveGlobalInstructions} onPlaceOrder={async (items, bill, guestPhone) => {
         if (isPlacingOrder) return;
         setIsPlacingOrder(true);
+        setOrderError(null);
         try {
-          const payload = {
+          const proxyPayload = {
             cartItems: items.map(item => ({
               id: String(item.id),
               itemId: String(item.id),
@@ -432,30 +434,35 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
               quantity: item.quantity,
               price: item.price,
               instruction: item.instructions || "",
+              gst_details: item.gst_details || { cgst: 0, sgst: 0 },
             })),
             billDetails: { subtotal: bill.subtotal, taxAmount: bill.taxAmount, discount: bill.discountAmount, total: bill.total },
             tableNumber: "12",
             guestPhone,
           };
           console.log("[FRONTEND] === PLACE ORDER TRIGGERED ===");
-          console.log("[FRONTEND] API Base URL:", process.env.NEXT_PUBLIC_API_BASE_URL);
-          console.log("[FRONTEND] Payload being sent to POST /api/orders:", JSON.stringify(payload, null, 2));
-          const result = await createOrder(payload);
-          console.log("[FRONTEND] API Response:", JSON.stringify(result, null, 2));
+          console.log("[FRONTEND] Sending to proxy: https://proxy.csatspl.com/api/syncorder");
+          console.log("[FRONTEND] Payload:", JSON.stringify(proxyPayload, null, 2));
+
+          const result = await syncOrderToProxy(proxyPayload);
+          console.log("[FRONTEND] Proxy Response:", JSON.stringify(result, null, 2));
+
           if (result.success) {
-            console.log("[FRONTEND] Order created successfully. WhatsApp target:", guestPhone);
+            console.log("[FRONTEND] Order synced successfully via proxy. WhatsApp target:", guestPhone);
+            setOrderData({items, bill});
+            setCheckoutStep('success');
+            setIsCartOpen(false);
+            setGlobalCart([]);
           } else {
-            console.error("[FRONTEND] Order creation FAILED:", result.error);
+            console.error("[FRONTEND] Order sync FAILED:", result.error);
+            setOrderError(result.error || "Order failed. Please try again.");
           }
         } catch (err) {
           console.error("Order API error:", err);
+          setOrderError("Something went wrong. Please try again.");
         } finally {
           setIsPlacingOrder(false);
         }
-        setOrderData({items, bill});
-        setCheckoutStep('success');
-        setIsCartOpen(false);
-        setGlobalCart([]);
       }} />
       
       {checkoutStep === 'success' && (
@@ -464,6 +471,24 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       
       <OrderSummaryView isOpen={checkoutStep === 'summary'} cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} onBack={() => setCheckoutStep('success')} onEdit={() => { setCheckoutStep(null); }} onProceedToPay={() => setCheckoutStep('payment')} />
       <PaymentView isOpen={checkoutStep === 'payment'} cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} onBack={() => setCheckoutStep('summary')} onPaymentComplete={() => { setCheckoutStep(null); setOrderData(null); }} />
+
+      {/* Loading overlay while placing order */}
+      {isPlacingOrder && (
+        <div className="fixed inset-0 z-[500] bg-black/50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl px-8 py-6 flex flex-col items-center gap-3 shadow-2xl">
+            <div className="w-10 h-10 border-4 border-[#0B4F6C] border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-[14px] font-bold text-[#0B4F6C]">Placing your order...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error toast */}
+      {orderError && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[600] w-[90%] max-w-[360px] bg-red-500 text-white rounded-xl px-5 py-3 shadow-2xl flex items-center justify-between animate-in slide-in-from-top duration-300">
+          <span className="text-[13px] font-semibold">{orderError}</span>
+          <button onClick={() => setOrderError(null)} className="ml-3 text-white/80 hover:text-white font-bold text-[16px]">&times;</button>
+        </div>
+      )}
     </div>
   );
 }

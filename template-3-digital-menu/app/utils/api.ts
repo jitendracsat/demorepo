@@ -84,8 +84,8 @@ export async function createOrder(orderData: {
   guestPhone?: string;
 }): Promise<ApiResponse<OrderData>> {
   try {
-    console.log('🚀 Creating order with data:', orderData);
-    
+    console.log('Creating order with data:', orderData);
+
     const response = await fetch(`${API_BASE_URL}/api/orders`, {
       method: 'POST',
       headers: {
@@ -93,22 +93,96 @@ export async function createOrder(orderData: {
       },
       body: JSON.stringify(orderData),
     });
-    
-    console.log('📡 Response status:', response.status);
-    
+
+    console.log('Response status:', response.status);
+
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
+
     const result = await response.json();
-    console.log('📦 API Response:', result);
-    
+    console.log('API Response:', result);
+
     return result;
   } catch (error) {
-    console.error('❌ Error creating order:', error);
+    console.error('Error creating order:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create order'
+    };
+  }
+}
+
+// Sync order to POS via proxy
+export async function syncOrderToProxy(orderData: {
+  cartItems: (OrderItem & { gst_details?: { cgst: number; sgst: number; igst?: number; inclusive?: boolean } })[];
+  billDetails: {
+    total: number;
+    subtotal: number;
+    taxAmount: number;
+    discount: number;
+  };
+  tableNumber?: string;
+  guestPhone?: string;
+}): Promise<ApiResponse<OrderData>> {
+  try {
+    const now = new Date();
+    // Keep OrderId short (max 10 chars) to fit POS database column constraints
+    const shortId = String(Date.now()).slice(-8);
+    const orderId = `W${shortId}`;
+
+    const posPayload = {
+      outletId: "010",
+      restaurantid: "210014",
+      PosCode: "001",
+      OrderId: orderId,
+      OrderDate: now.toISOString(),
+      TblNo: orderData.tableNumber || "12",
+      guest: {
+        phone: orderData.guestPhone || "",
+      },
+      subtotal: orderData.billDetails.subtotal,
+      discountAmount: orderData.billDetails.discount,
+      taxAmount: orderData.billDetails.taxAmount,
+      totalAmount: orderData.billDetails.total,
+      paymentMethod: "",
+      currency: "INR",
+      items: orderData.cartItems.map((item) => ({
+        itemId: String(item.id),
+        itemName: item.itemName,
+        category: "",
+        quantity: item.quantity,
+        unitPrice: item.price,
+        totalPrice: item.price * item.quantity,
+        modifiers: [],
+        discountApplied: 0.0,
+      })),
+    };
+
+    console.log("[FRONTEND] Syncing order to proxy via Next.js route:", JSON.stringify(posPayload, null, 2));
+
+    const response = await fetch("/api/syncorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(posPayload),
+    });
+
+    console.log("[FRONTEND] Proxy response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Proxy error ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log("[FRONTEND] Proxy response:", JSON.stringify(result, null, 2));
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("[FRONTEND] Proxy sync error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to sync order to POS",
     };
   }
 }
