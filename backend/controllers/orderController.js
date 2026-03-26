@@ -135,6 +135,49 @@ export const createOrder = async (req, res) => {
 
     console.log("[ORDER CTRL] POS PAYLOAD:\n", JSON.stringify(posPayload, null, 2));
 
+    // ============ SYNC TO CSAT PROXY (NON-BLOCKING) ============
+    try {
+      const proxySecret = process.env.PROXY_SECRET;
+      const proxyUrl = 'https://proxy.csatspl.com/api/syncorder';
+
+      console.log('\n------------------------------------------------------------');
+      console.log('[PROXY SYNC] >>> SENDING ORDER TO CSAT PROXY <<<');
+      console.log('[PROXY SYNC] URL:', proxyUrl);
+      console.log('[PROXY SYNC] PROXY_SECRET present:', !!proxySecret, '| length:', proxySecret?.length || 0);
+      console.log('[PROXY SYNC] Payload:', JSON.stringify(posPayload, null, 2));
+      console.log('------------------------------------------------------------');
+
+      const proxyStartTime = Date.now();
+      const proxyRes = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Proxy-Secret': proxySecret || '',
+          'outletId': '010',
+          'restaurantid': '210014',
+          'poscode': 'rest',
+        },
+        body: JSON.stringify(posPayload),
+      });
+
+      const proxyElapsed = Date.now() - proxyStartTime;
+      const proxyData = await proxyRes.json().catch(() => null);
+
+      console.log('[PROXY SYNC] Response in', proxyElapsed, 'ms');
+      console.log('[PROXY SYNC] HTTP status:', proxyRes.status);
+      console.log('[PROXY SYNC] Response body:', JSON.stringify(proxyData, null, 2));
+
+      if (proxyRes.ok) {
+        console.log('[PROXY SYNC] Order synced to CSAT proxy successfully');
+      } else {
+        console.error('[PROXY SYNC] CSAT proxy rejected — status:', proxyRes.status, '| body:', JSON.stringify(proxyData));
+      }
+    } catch (proxyError) {
+      // Log but DO NOT crash the server or stop the order flow
+      console.error('[PROXY SYNC] FAILED (NON-BLOCKING):', proxyError.message);
+      console.error('[PROXY SYNC] Error stack:', proxyError.stack);
+    }
+
     // ============ WHATSAPP OTP STEP ============
     const customerPhone = guestPhone || '';
     console.log('\n------------------------------------------------------------');
@@ -253,5 +296,84 @@ export const updateOrderStatus = async (req, res) => {
   } catch (error) {
     console.error('[ORDER CTRL] Status Update Error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 5. INBOUND POS STATUS WEBHOOK
+// POST /api/orders/status-update
+// Called by partner POS system to push status changes
+// Status codes: 1 = Accepted, 2 = Rejected, 3 = Food Ready, 4 = Served
+const POS_STATUS_MAP = {
+  1: 'ACCEPTED',
+  2: 'REJECTED',
+  3: 'FOOD_READY',
+  4: 'SERVED',
+};
+
+export const posStatusWebhook = async (req, res) => {
+  try {
+    console.log('\n############################################################');
+    console.log('[POS WEBHOOK] >>> INBOUND STATUS UPDATE <<<');
+    console.log('[POS WEBHOOK] Timestamp:', new Date().toISOString());
+    console.log('[POS WEBHOOK] Full body:', JSON.stringify(req.body, null, 2));
+    console.log('############################################################');
+
+    const { OrderId, Status } = req.body;
+
+    console.log('[POS WEBHOOK] OrderId:', OrderId, '| Status code:', Status);
+
+    if (!OrderId || Status == null) {
+      console.log('[POS WEBHOOK] REJECTED — missing OrderId or Status');
+      return res.status(400).json({ success: false, message: 'Missing required fields: OrderId and Status' });
+    }
+
+    const mappedStatus = POS_STATUS_MAP[Number(Status)];
+    if (!mappedStatus) {
+      console.log('[POS WEBHOOK] REJECTED — unknown status code:', Status);
+      return res.status(400).json({ success: false, message: `Unknown status code: ${Status}. Accepted: 1 (Accepted), 2 (Rejected), 3 (Food Ready), 4 (Served)` });
+    }
+
+    console.log('[POS WEBHOOK] Mapped status:', Status, '→', mappedStatus);
+
+    // Find order by external OrderId
+    const order = await prisma.order.findUnique({
+      where: { orderId: String(OrderId) },
+    });
+
+    if (!order) {
+      console.log('[POS WEBHOOK] Order NOT FOUND in DB for OrderId:', OrderId);
+      return res.status(404).json({ success: false, message: `Order ${OrderId} not found` });
+    }
+
+    console.log('[POS WEBHOOK] Order found — DB id:', order.id, '| current status:', order.status);
+
+    // Update status in DB
+    const updatedOrder = await prisma.order.update({
+      where: { orderId: String(OrderId) },
+      data: { status: mappedStatus },
+    });
+
+    console.log('[POS WEBHOOK] DB updated — new status:', updatedOrder.status);
+
+    // Emit real-time event to frontend
+    const io = getIO();
+    if (io) {
+      io.emit('ORDER_STATUS_CHANGED', { OrderId: String(OrderId), status: mappedStatus });
+      console.log('[POS WEBHOOK] Socket.io emitted ORDER_STATUS_CHANGED:', { OrderId: String(OrderId), status: mappedStatus });
+    } else {
+      console.log('[POS WEBHOOK] WARNING: Socket.io not available');
+    }
+
+    console.log('[POS WEBHOOK] Responding 200 OK to POS');
+    return res.status(200).json({
+      success: true,
+      message: `Order ${OrderId} status updated to ${mappedStatus}`,
+      orderId: updatedOrder.id,
+      status: mappedStatus,
+    });
+  } catch (error) {
+    console.error('[POS WEBHOOK] ERROR:', error.message);
+    console.error('[POS WEBHOOK] Stack:', error.stack);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
