@@ -17,6 +17,7 @@ const API_VERSION = 'v22.0';
  */
 function formatToInternational(phone) {
   const digits = phone.replace(/\D/g, '');
+  console.log('[WHATSAPP DEBUG] formatToInternational — raw input:', phone, '| digits only:', digits, '| length:', digits.length);
   if (digits.length > 10) return digits;
   if (digits.length === 10) return `91${digits}`;
   return digits;
@@ -26,32 +27,43 @@ function formatToInternational(phone) {
  * Generate a random 4-digit OTP (1000–9999).
  */
 function generateOTP() {
-  return String(Math.floor(1000 + Math.random() * 9000));
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  console.log('[WHATSAPP DEBUG] Generated OTP:', otp);
+  return otp;
 }
 
 /**
  * Send an OTP to the given phone number via the otp_template1 authentication template.
- * Returns { success, otp, messageId } on success or { success: false, error } on failure.
- *
- * The OTP is passed in both the body and the button component as required by Meta
- * authentication templates.
  */
 export async function sendOTP(phoneNumber) {
+  console.log('\n============================================================');
+  console.log('[WHATSAPP] >>>  sendOTP() CALLED  <<<');
+  console.log('[WHATSAPP] Timestamp:', new Date().toISOString());
+  console.log('[WHATSAPP] Input phoneNumber:', phoneNumber);
+  console.log('============================================================');
+
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const to = formatToInternational(phoneNumber);
   const otp = generateOTP();
 
-  console.log('\n========== [WHATSAPP] SEND OTP ==========');
-  console.log('[WHATSAPP] Formatted phone:', to);
-  console.log('[WHATSAPP] Generated OTP:', otp);
+  // --- ENV VAR DEBUG ---
+  console.log('[WHATSAPP DEBUG] ENV CHECK:');
+  console.log('  WHATSAPP_TOKEN present:', !!token);
+  console.log('  WHATSAPP_TOKEN length:', token?.length || 0);
+  console.log('  WHATSAPP_TOKEN first 20 chars:', token?.substring(0, 20) || '(empty)');
+  console.log('  WHATSAPP_TOKEN last 10 chars:', token?.slice(-10) || '(empty)');
+  console.log('  WHATSAPP_PHONE_NUMBER_ID:', phoneNumberId || '(NOT SET)');
+  console.log('  Formatted "to" phone:', to);
 
   if (!token || !phoneNumberId || token === 'YOUR_META_ACCESS_TOKEN_HERE') {
     console.log('[WHATSAPP] MOCK MODE — no valid credentials. Skipping real API call.');
+    console.log('[WHATSAPP] Reason:', !token ? 'TOKEN missing' : !phoneNumberId ? 'PHONE_NUMBER_ID missing' : 'TOKEN is placeholder');
     return { success: true, mock: true, otp, messageId: 'mock-' + Date.now() };
   }
 
   const apiUrl = `https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`;
+  console.log('[WHATSAPP DEBUG] API URL:', apiUrl);
 
   const messageBody = {
     messaging_product: 'whatsapp',
@@ -75,7 +87,12 @@ export async function sendOTP(phoneNumber) {
     },
   };
 
+  console.log('[WHATSAPP DEBUG] Full request payload:', JSON.stringify(messageBody, null, 2));
+
   try {
+    console.log('[WHATSAPP] Calling Meta Graph API...');
+    const startTime = Date.now();
+
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -85,21 +102,38 @@ export async function sendOTP(phoneNumber) {
       body: JSON.stringify(messageBody),
     });
 
+    const elapsed = Date.now() - startTime;
     const data = await res.json();
+
+    console.log('[WHATSAPP DEBUG] Meta API responded in', elapsed, 'ms');
+    console.log('[WHATSAPP DEBUG] HTTP status:', res.status);
+    console.log('[WHATSAPP DEBUG] Response body:', JSON.stringify(data, null, 2));
 
     if (res.ok) {
       const messageId = data.messages?.[0]?.id;
-      console.log(`[WHATSAPP] OTP sent successfully: ${otp} | msgId: ${messageId}`);
+      console.log('[WHATSAPP] OTP sent successfully:', otp, '| msgId:', messageId, '| to:', to);
       return { success: true, otp, messageId };
     }
 
-    console.error('[WHATSAPP] OTP send failed:', JSON.stringify(data.error || data, null, 2));
+    // --- FAILURE DETAIL ---
+    console.error('[WHATSAPP] OTP send FAILED');
+    console.error('[WHATSAPP] HTTP status:', res.status);
+    console.error('[WHATSAPP] Error code:', data.error?.code);
+    console.error('[WHATSAPP] Error subcode:', data.error?.error_subcode);
+    console.error('[WHATSAPP] Error message:', data.error?.message);
+    console.error('[WHATSAPP] Error type:', data.error?.type);
+    console.error('[WHATSAPP] fbtrace_id:', data.error?.fbtrace_id);
+    console.error('[WHATSAPP] Full error JSON:', JSON.stringify(data, null, 2));
+
     return { success: false, error: data.error?.message || `HTTP ${res.status}` };
   } catch (error) {
     // Log Meta's error details but DO NOT crash the server or stop the order flow
-    console.error('[WHATSAPP] Network/fetch error:', error.message);
+    console.error('[WHATSAPP] NETWORK/FETCH ERROR (server NOT crashed):');
+    console.error('[WHATSAPP] Error name:', error.name);
+    console.error('[WHATSAPP] Error message:', error.message);
+    console.error('[WHATSAPP] Error stack:', error.stack);
     if (error.response?.data) {
-      console.error('[WHATSAPP] Meta error data:', JSON.stringify(error.response.data, null, 2));
+      console.error('[WHATSAPP] error.response.data:', JSON.stringify(error.response.data, null, 2));
     }
     return { success: false, error: error.message };
   }

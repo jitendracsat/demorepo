@@ -58,7 +58,8 @@ model Order {
   tableNumber   String?     // "TblNo" in JSON
   paymentMethod String?     // "paymentMethod" in JSON
   currency      String?     // "currency" in JSON
-  status        String      @default("RECEIVED")
+  
+  
   csatSyncStatus Boolean    @default(false)
 
   createdAt     DateTime    @default(now())

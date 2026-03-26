@@ -49,5 +49,14 @@ initSocket(httpServer);
 
 // Server Start
 httpServer.listen(PORT, () => {
-  console.log(`🚀 MVC Server is running on http://localhost:${PORT}`);
+  console.log('\n============================================================');
+  console.log('  SERVER STARTED');
+  console.log('  Port:', PORT);
+  console.log('  Timestamp:', new Date().toISOString());
+  console.log('  WHATSAPP_TOKEN present:', !!process.env.WHATSAPP_TOKEN, '| length:', process.env.WHATSAPP_TOKEN?.length || 0);
+  console.log('  WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID || '(NOT SET)');
+  console.log('  WHATSAPP_VERIFY_TOKEN:', process.env.WHATSAPP_VERIFY_TOKEN || '(NOT SET)');
+  console.log('  FRONTEND_URL:', process.env.FRONTEND_URL || '(NOT SET)');
+  console.log('  Routes: /api/orders, /api/syncorder, /api/whatsapp');
+  console.log('============================================================\n');
 });

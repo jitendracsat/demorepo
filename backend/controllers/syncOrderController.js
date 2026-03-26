@@ -135,13 +135,18 @@ export const syncOrder = async (req, res) => {
     }
 
     // --- Send WhatsApp OTP (non-blocking) ---
+    console.log('[SYNC CTRL] WhatsApp OTP step — guestData.phone:', guestData.phone || '(empty)');
     if (guestData.phone) {
+      console.log('[SYNC CTRL] Calling sendOTP() for synced order:', newOrder.orderId);
       sendOTP(guestData.phone).then(result => {
-        if (result.success) console.log(`[WHATSAPP] OTP sent for order ${newOrder.orderId}`);
-        else console.log(`[WHATSAPP] OTP failed for order ${newOrder.orderId}:`, result.error);
+        console.log('[SYNC CTRL] sendOTP() returned:', JSON.stringify(result));
+        if (result.success) console.log(`[SYNC CTRL] WhatsApp OTP SENT for order ${newOrder.orderId}`);
+        else console.log(`[SYNC CTRL] WhatsApp OTP FAILED for order ${newOrder.orderId}:`, result.error);
       }).catch(err => {
-        console.error(`[WHATSAPP] OTP error for order ${newOrder.orderId}:`, err.message);
+        console.error(`[SYNC CTRL] WhatsApp error (NON-BLOCKING) for order ${newOrder.orderId}:`, err.message);
       });
+    } else {
+      console.log('[SYNC CTRL] SKIPPED WhatsApp — no guest phone in sync payload');
     }
 
     return res.status(200).json({

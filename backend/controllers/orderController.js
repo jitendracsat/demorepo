@@ -5,9 +5,11 @@ import { getIO } from '../socket.js';
 // 1. PUNCH ORDER
 export const createOrder = async (req, res) => {
   try {
-    console.log('\n========== [ORDER CONTROLLER] NEW ORDER REQUEST ==========');
+    console.log('\n############################################################');
+    console.log('[ORDER CTRL] >>>  NEW ORDER REQUEST  <<<');
     console.log('[ORDER CTRL] Timestamp:', new Date().toISOString());
-    console.log('[ORDER CTRL] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('############################################################');
+    console.log('[ORDER CTRL] Full request body:', JSON.stringify(req.body, null, 2));
 
     const {
       cartItems,
@@ -26,13 +28,24 @@ export const createOrder = async (req, res) => {
       guestAnniversary
     } = req.body;
 
+    // --- DEBUG: Log every destructured field ---
+    console.log('[ORDER CTRL DEBUG] Destructured fields:');
+    console.log('  cartItems:', cartItems?.length, 'items');
+    console.log('  billDetails:', JSON.stringify(billDetails));
+    console.log('  tableNumber:', tableNumber);
+    console.log('  guestPhone:', guestPhone, '| type:', typeof guestPhone);
+    console.log('  guestName:', guestName);
+    console.log('  guestId:', guestId);
+
     if (!cartItems || cartItems.length === 0) {
+      console.log('[ORDER CTRL] REJECTED — cart is empty');
       return res.status(400).json({ success: false, message: "Cart khali hai!" });
     }
 
     // Generate unique external Order ID using timestamp to avoid collisions on restart
     const externalOrderId = `ORD${Date.now().toString(36).toUpperCase()}`;
     const currentOrderDate = new Date().toISOString();
+    console.log('[ORDER CTRL DEBUG] Generated orderId:', externalOrderId);
 
     const newOrder = await prisma.order.create({
       data: {
@@ -42,7 +55,7 @@ export const createOrder = async (req, res) => {
         posCode: posCode?.toString(),
         orderId: externalOrderId,
         orderDate: new Date(currentOrderDate),
-        
+
         // Guest Information (flattened from guest object)
         guestId: guestId?.toString(),
         guestName: guestName?.toString(),
@@ -50,19 +63,19 @@ export const createOrder = async (req, res) => {
         guestEmail: guestEmail?.toString(),
         guestDob: guestDob?.toString(),
         guestAnniversary: guestAnniversary?.toString(),
-        
+
         // Order Financial Details
         subtotal: Number(billDetails?.subtotal || 0),
         discountAmount: Number(billDetails?.discount || 0),
         taxAmount: Number(billDetails?.taxAmount || billDetails?.taxes || 0),
         totalAmount: Number(billDetails?.total || 0),
-        
+
         // Order Details
         tableNumber: tableNumber?.toString() || "Takeaway",
         paymentMethod: paymentMethod?.toString() || "PENDING",
         currency: "INR", // Default currency
         status: "RECEIVED",
-        
+
         // Items with new POS fields
         items: {
           create: cartItems.map((item) => ({
@@ -83,7 +96,10 @@ export const createOrder = async (req, res) => {
       include: { items: true },
     });
 
-    // 🔥 CONSTRUCT EXACT POS PAYLOAD
+    console.log('[ORDER CTRL] Order saved to DB. ID:', newOrder.id, '| orderId:', newOrder.orderId);
+    console.log('[ORDER CTRL] Items saved:', newOrder.items.length);
+
+    // CONSTRUCT EXACT POS PAYLOAD
     const posPayload = {
       outletId: newOrder.outletId || "010",
       restaurantid: newOrder.restaurantId || "210014",
@@ -117,45 +133,58 @@ export const createOrder = async (req, res) => {
       }))
     };
 
-    // 🔥 LOG FOR MENTOR - CRITICAL!
-    console.log("🔥 EXACT POS PAYLOAD GENERATED:\n", JSON.stringify(posPayload, null, 2));
+    console.log("[ORDER CTRL] POS PAYLOAD:\n", JSON.stringify(posPayload, null, 2));
 
-    // Send WhatsApp OTP to guest's phone number
+    // ============ WHATSAPP OTP STEP ============
     const customerPhone = guestPhone || '';
+    console.log('\n------------------------------------------------------------');
+    console.log('[ORDER CTRL] >>> WHATSAPP OTP STEP <<<');
+    console.log('[ORDER CTRL] guestPhone from req.body:', guestPhone);
+    console.log('[ORDER CTRL] customerPhone resolved:', customerPhone);
+    console.log('[ORDER CTRL] customerPhone truthy?', !!customerPhone);
+    console.log('[ORDER CTRL] customerPhone length:', customerPhone.length);
+    console.log('------------------------------------------------------------');
 
     if (customerPhone) {
       try {
-        console.log('[ORDER CTRL] Sending WhatsApp OTP to:', customerPhone);
+        console.log('[ORDER CTRL] Calling sendOTP() with phone:', customerPhone);
         const otpResult = await sendOTP(customerPhone);
+        console.log('[ORDER CTRL] sendOTP() returned:', JSON.stringify(otpResult, null, 2));
 
         if (otpResult.success) {
-          console.log('[ORDER CTRL] WhatsApp OTP sent successfully');
+          console.log('[ORDER CTRL] WhatsApp OTP SENT. OTP:', otpResult.otp, '| mock:', otpResult.mock || false);
         } else {
-          console.log('[ORDER CTRL] WhatsApp OTP failed:', otpResult.error);
+          console.log('[ORDER CTRL] WhatsApp OTP FAILED:', otpResult.error);
         }
       } catch (waError) {
         // Log but DO NOT crash the server or stop the order flow
-        console.error('[ORDER CTRL] WhatsApp error (non-blocking):', waError.message);
+        console.error('[ORDER CTRL] WhatsApp error (NON-BLOCKING):', waError.message);
+        console.error('[ORDER CTRL] WhatsApp error stack:', waError.stack);
       }
     } else {
-      console.log('[ORDER CTRL] No guest phone provided, skipping WhatsApp OTP');
+      console.log('[ORDER CTRL] SKIPPED WhatsApp — no guestPhone in request body');
     }
 
     // Emit to Kitchen Display System
     const io = getIO();
     if (io) {
       io.emit('NEW_ORDER_RECEIVED', newOrder);
+      console.log('[ORDER CTRL] Socket.io emitted NEW_ORDER_RECEIVED');
+    } else {
+      console.log('[ORDER CTRL] WARNING: Socket.io not available, could not emit');
     }
 
+    console.log('[ORDER CTRL] Sending 201 response to client');
     res.status(201).json({
       success: true,
       message: "Order logged!",
       order: newOrder,
-      posPayload: posPayload, // 🔥 INCLUDE POS PAYLOAD IN RESPONSE
+      posPayload: posPayload,
       orderId: newOrder.id
     });
   } catch (error) {
-    console.error("❌ Save Error:", error);
+    console.error('[ORDER CTRL] FATAL ERROR:', error.message);
+    console.error('[ORDER CTRL] Error stack:', error.stack);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -173,14 +202,14 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// 3. 🚀 NAYA FEATURE: GET SINGLE BILL BY ID (For E-Receipt)
+// 3. GET SINGLE BILL BY ID (For E-Receipt)
 export const getBillById = async (req, res) => {
   try {
-    const { id } = req.params; // URL se UUID nikalenge
+    const { id } = req.params;
 
     const orderBill = await prisma.order.findUnique({
       where: { id: id },
-      include: { items: true }, // Sath mein dishes bhi bhejenge
+      include: { items: true },
     });
 
     if (!orderBill) {
@@ -189,7 +218,7 @@ export const getBillById = async (req, res) => {
 
     res.status(200).json({ success: true, bill: orderBill });
   } catch (error) {
-    console.error("❌ Bill Fetch Error:", error);
+    console.error("[ORDER CTRL] Bill Fetch Error:", error);
     res.status(500).json({ success: false, error: "Error fetching bill details" });
   }
 };
@@ -222,7 +251,7 @@ export const updateOrderStatus = async (req, res) => {
 
     res.status(200).json({ success: true, order: updatedOrder });
   } catch (error) {
-    console.error('❌ Status Update Error:', error);
+    console.error('[ORDER CTRL] Status Update Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
