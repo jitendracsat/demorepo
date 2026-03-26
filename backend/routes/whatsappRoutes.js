@@ -12,36 +12,32 @@ router.get('/webhook', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || 'csat_whatsapp_verify_2024';
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === verifyToken) {
-    console.log('[WhatsApp Webhook] Verification successful');
+    console.log('[WHATSAPP WEBHOOK] Verification successful');
     return res.status(200).send(challenge);
   }
 
-  console.warn('[WhatsApp Webhook] Verification failed — token mismatch');
+  console.warn('[WHATSAPP WEBHOOK] Verification failed — token mismatch');
   return res.status(403).json({ error: 'Verification failed' });
 });
 
 /**
  * POST /api/whatsapp/webhook
- * Receives status updates from Meta (sent, delivered, read, failed).
- * Also receives incoming messages if configured.
+ * Receives incoming message statuses (delivered, read, etc.) from Meta.
+ * Immediately responds with 200 OK so Meta doesn't retry.
  */
 router.post('/webhook', (req, res) => {
+  // Immediately respond 200 so Meta doesn't retry
+  res.sendStatus(200);
+
   const body = req.body;
 
-  console.log('\n========== [WEBHOOK] INCOMING WHATSAPP WEBHOOK ==========');
-  console.log('[WEBHOOK] Timestamp:', new Date().toISOString());
-  console.log('[WEBHOOK] Full body:', JSON.stringify(body, null, 2));
-
-  // Meta always sends object with "object": "whatsapp_business_account"
   if (body.object !== 'whatsapp_business_account') {
-    console.log('[WEBHOOK] Ignored — not a whatsapp_business_account object');
-    return res.sendStatus(404);
+    return;
   }
 
-  // Process each entry
   const entries = body.entry || [];
   for (const entry of entries) {
     const changes = entry.changes || [];
@@ -51,24 +47,21 @@ router.post('/webhook', (req, res) => {
       // Status updates (sent / delivered / read / failed)
       const statuses = value.statuses || [];
       for (const status of statuses) {
-        console.log(`[WhatsApp Status] msgId: ${status.id} | status: ${status.status} | recipient: ${status.recipient_id}`);
+        console.log(`[WHATSAPP WEBHOOK] Status received: ${status.status} | msgId: ${status.id} | recipient: ${status.recipient_id}`);
 
         if (status.status === 'failed') {
           const errInfo = status.errors?.[0] || {};
-          console.error(`[WhatsApp Failed] code: ${errInfo.code} | title: ${errInfo.title}`);
+          console.error(`[WHATSAPP WEBHOOK] Failed — code: ${errInfo.code} | title: ${errInfo.title}`);
         }
       }
 
-      // Incoming messages (if you want to handle customer replies later)
+      // Incoming messages (for future use)
       const messages = value.messages || [];
       for (const msg of messages) {
-        console.log(`[WhatsApp Incoming] from: ${msg.from} | type: ${msg.type} | text: ${msg.text?.body || ''}`);
+        console.log(`[WHATSAPP WEBHOOK] Incoming message from: ${msg.from} | type: ${msg.type}`);
       }
     }
   }
-
-  // Meta requires a 200 response within 5 seconds
-  return res.sendStatus(200);
 });
 
 export default router;

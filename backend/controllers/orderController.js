@@ -1,5 +1,5 @@
 import prisma from '../config/prisma.js';
-import { sendOrderConfirmation } from '../services/whatsapp.js';
+import { sendOTP } from '../services/whatsapp.js';
 import { getIO } from '../socket.js';
 
 // 1. PUNCH ORDER
@@ -120,31 +120,25 @@ export const createOrder = async (req, res) => {
     // 🔥 LOG FOR MENTOR - CRITICAL!
     console.log("🔥 EXACT POS PAYLOAD GENERATED:\n", JSON.stringify(posPayload, null, 2));
 
-    // Send WhatsApp order confirmation to guest's actual phone number
+    // Send WhatsApp OTP to guest's phone number
     const customerPhone = guestPhone || '';
 
-    console.log('\n---------- [ORDER CTRL] WHATSAPP STEP ----------');
-    console.log('[ORDER CTRL] guestPhone from request:', guestPhone);
-    console.log('[ORDER CTRL] customerPhone resolved to:', customerPhone);
-
     if (customerPhone) {
-      const whatsappPayload = {
-        orderId: externalOrderId,
-        totalAmount: newOrder.totalAmount,
-        tableNumber: newOrder.tableNumber || 'Takeaway',
-        itemCount: cartItems.length,
-      };
-      console.log('[ORDER CTRL] Calling sendOrderConfirmation with:', JSON.stringify({ phone: customerPhone, orderDetails: whatsappPayload }, null, 2));
-      const whatsappResult = await sendOrderConfirmation(customerPhone, whatsappPayload);
-      console.log('[ORDER CTRL] WhatsApp result:', JSON.stringify(whatsappResult, null, 2));
+      try {
+        console.log('[ORDER CTRL] Sending WhatsApp OTP to:', customerPhone);
+        const otpResult = await sendOTP(customerPhone);
 
-      if (whatsappResult.success) {
-        console.log('[ORDER CTRL] ✅ WhatsApp order confirmation sent successfully');
-      } else {
-        console.log('[ORDER CTRL] ⚠️ WhatsApp message failed:', whatsappResult.error);
+        if (otpResult.success) {
+          console.log('[ORDER CTRL] WhatsApp OTP sent successfully');
+        } else {
+          console.log('[ORDER CTRL] WhatsApp OTP failed:', otpResult.error);
+        }
+      } catch (waError) {
+        // Log but DO NOT crash the server or stop the order flow
+        console.error('[ORDER CTRL] WhatsApp error (non-blocking):', waError.message);
       }
     } else {
-      console.log('[ORDER CTRL] ⚠️ No guest phone provided, skipping WhatsApp notification');
+      console.log('[ORDER CTRL] No guest phone provided, skipping WhatsApp OTP');
     }
 
     // Emit to Kitchen Display System
