@@ -35,17 +35,19 @@ function generateOTP() {
 /**
  * Send an OTP to the given phone number via the otp_template1 authentication template.
  */
-export async function sendOTP(phoneNumber) {
+export async function sendOTP(phoneNumber, otpOverride) {
   console.log('\n============================================================');
   console.log('[WHATSAPP] >>>  sendOTP() CALLED  <<<');
   console.log('[WHATSAPP] Timestamp:', new Date().toISOString());
   console.log('[WHATSAPP] Input phoneNumber:', phoneNumber);
+  console.log('[WHATSAPP] otpOverride provided:', !!otpOverride);
   console.log('============================================================');
 
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const to = formatToInternational(phoneNumber);
-  const otp = generateOTP();
+  const otp = otpOverride ? String(otpOverride).trim() : generateOTP();
+  console.log('[WHATSAPP] Using OTP:', otp, otpOverride ? '(from caller)' : '(self-generated)');
 
   // --- ENV VAR DEBUG ---
   console.log('[WHATSAPP DEBUG] ENV CHECK:');

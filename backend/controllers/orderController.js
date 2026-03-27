@@ -123,8 +123,8 @@ export const createOrder = async (req, res) => {
 
     if (customerPhone) {
       try {
-        console.log('[ORDER CTRL] Calling sendOTP() with phone:', customerPhone);
-        const otpResult = await sendOTP(customerPhone);
+        console.log('[ORDER CTRL] Calling sendOTP() with phone:', customerPhone, '| OTP:', otpCode);
+        const otpResult = await sendOTP(customerPhone, otpCode);
         console.log('[ORDER CTRL] sendOTP() returned:', JSON.stringify(otpResult, null, 2));
 
         if (otpResult.success) {
