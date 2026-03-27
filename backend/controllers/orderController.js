@@ -187,22 +187,30 @@ export const verifyOTP = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Order already verified' });
     }
 
-    // TESTING FALLBACK: "0000" is the master OTP — bypasses expiry check
-    const isMasterOtp = userOtp === "0000";
-    const isOtpMatch = userOtp === order.otpCode;
+    // ── Type-safe normalization (fixes Number vs String / whitespace mismatches) ──
+    const cleanUserOtp = String(userOtp).trim();
+    const cleanDbOtp   = String(order.otpCode ?? '').trim();
+    const now           = new Date();
+    const expiryDate    = order.otpExpiry ? new Date(order.otpExpiry) : null;
 
-    console.log('[VERIFY OTP] DB otpCode:', order.otpCode, '| userOtp:', userOtp);
+    console.log('[VERIFY OTP] Comparing -> User:', cleanUserOtp, '(Type:', typeof cleanUserOtp, ') | DB:', cleanDbOtp, '(Type:', typeof cleanDbOtp, ')');
+    console.log('[VERIFY OTP] Server time:', now.toISOString(), '| OTP expiry:', expiryDate ? expiryDate.toISOString() : 'null');
+
+    const isMasterOtp = cleanUserOtp === '0000';
+    const isOtpMatch  = cleanUserOtp === cleanDbOtp;
+
     console.log('[VERIFY OTP] isMasterOtp:', isMasterOtp, '| isOtpMatch:', isOtpMatch);
 
+    // Check match first
     if (!isMasterOtp && !isOtpMatch) {
-      console.log('[VERIFY OTP] REJECTED — OTP mismatch');
-      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+      console.log('[VERIFY OTP] REJECTED — OTP mismatch. User sent:', cleanUserOtp, '| DB has:', cleanDbOtp);
+      return res.status(400).json({ success: false, message: 'Invalid OTP code.' });
     }
 
-    // Check expiry only for non-master OTPs
-    if (!isMasterOtp && order.otpExpiry && new Date() > new Date(order.otpExpiry)) {
-      console.log('[VERIFY OTP] REJECTED — OTP expired at:', order.otpExpiry);
-      return res.status(400).json({ success: false, message: 'OTP has expired' });
+    // Check expiry only for real OTPs (not master)
+    if (!isMasterOtp && expiryDate && now > expiryDate) {
+      console.log('[VERIFY OTP] REJECTED — OTP expired at:', expiryDate.toISOString(), '| Current time:', now.toISOString());
+      return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
     }
 
     // ============ OTP VALID — Mark as verified & clear OTP fields ============
