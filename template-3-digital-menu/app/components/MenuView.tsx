@@ -15,7 +15,7 @@ import CartOverlay, { CartItem } from "./CartOverlay";
 import OrderSummaryView from "./OrderSummaryView";
 import PaymentView from "./PaymentView";
 import OrderSuccessView from "./OrderSuccessView";
-import { createOrder } from "../utils/api";
+import { createOrder, verifyOtp } from "../utils/api";
 
 // Nayi API service import kar li (Path apne hisaab se adjust kar lena agar services folder bahar hai)
 import { csatApi } from "../../src/services/api"; 
@@ -47,9 +47,14 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
   const [discountOfferState, setDiscountOfferState] = useState<{isOpen: boolean, offer: DiscountOffer | null}>({isOpen: false, offer: null});
   const [isCartOpen, setIsCartOpen] = useState(false);
   
-  const [orderData, setOrderData] = useState<{items: any[], bill: any} | null>(null);
-  const [checkoutStep, setCheckoutStep] = useState<'cart' | 'summary' | 'payment' | 'success' | null>(null);
+  const [orderData, setOrderData] = useState<{items: any[], bill: any, orderId?: string, dbId?: string} | null>(null);
+  const [checkoutStep, setCheckoutStep] = useState<'cart' | 'summary' | 'payment' | 'otp' | 'success' | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+
+  // OTP Verification State
+  const [otpValue, setOtpValue] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   
   // Enhanced State Management for High-Performance Filtering
   const [searchQuery, setSearchQuery] = useState("");
@@ -423,6 +428,10 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       <CartOverlay isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} cartItems={globalCart} updateQuantity={handleUpdateQuantity} handleSaveInstructions={handleSaveGlobalInstructions} onPlaceOrder={async (items, bill, guestPhone) => {
         if (isPlacingOrder) return;
         setIsPlacingOrder(true);
+
+        console.log('[FRONTEND] >>> PLACE ORDER CLICKED <<<');
+        console.log('[FRONTEND] guestPhone:', guestPhone, '| items:', items.length);
+
         try {
           const payload = {
             cartItems: items.map(item => ({
@@ -437,29 +446,100 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
             tableNumber: "12",
             guestPhone,
           };
-          console.log("[FRONTEND] === PLACE ORDER TRIGGERED ===");
-          console.log("[FRONTEND] API Base URL:", process.env.NEXT_PUBLIC_API_BASE_URL);
-          console.log("[FRONTEND] Payload being sent to POST /api/orders:", JSON.stringify(payload, null, 2));
+
           const result = await createOrder(payload);
-          console.log("[FRONTEND] API Response:", JSON.stringify(result, null, 2));
+
           if (result.success) {
-            console.log("[FRONTEND] Order created successfully. WhatsApp target:", guestPhone);
+            console.log('[FRONTEND] Order created — awaiting OTP. dbId:', result.orderId, '| externalOrderId:', result.externalOrderId);
+            // Store order data but DON'T go to success — go to OTP step
+            setOrderData({ items, bill, orderId: result.externalOrderId || '', dbId: result.orderId || '' });
+            setOtpValue("");
+            setOtpError("");
+            setCheckoutStep('otp');
+            setIsCartOpen(false);
           } else {
-            console.error("[FRONTEND] Order creation FAILED:", result.error);
+            console.error('[FRONTEND] ORDER FAILED:', result.error);
           }
         } catch (err) {
-          console.error("Order API error:", err);
+          console.error('[FRONTEND] ORDER EXCEPTION:', err);
         } finally {
           setIsPlacingOrder(false);
         }
-        setOrderData({items, bill});
-        setCheckoutStep('success');
-        setIsCartOpen(false);
-        setGlobalCart([]);
       }} />
       
+      {/* OTP Verification Modal */}
+      {checkoutStep === 'otp' && (
+        <div className="fixed inset-0 z-[400] bg-black/50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl p-6 mx-6 w-full max-w-[340px] shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-3">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M12 1C8.13 1 5 4.13 5 8V11H3V23H21V11H19V8C19 4.13 15.87 1 12 1ZM12 3C14.76 3 17 5.24 17 8V11H7V8C7 5.24 9.24 3 12 3ZM13 17.7V20H11V17.7C10.4 17.4 10 16.7 10 16C10 14.9 10.9 14 12 14C13.1 14 14 14.9 14 16C14 16.7 13.6 17.4 13 17.7Z" fill="#0B4F6C"/></svg>
+              </div>
+              <h2 className="text-lg font-bold text-[#0B4F6C]">Verify Your Order</h2>
+              <p className="text-sm text-gray-500 text-center mt-1">Enter the 4-digit OTP sent to your phone</p>
+            </div>
+
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              value={otpValue}
+              onChange={(e) => { setOtpValue(e.target.value.replace(/\D/g, '')); setOtpError(""); }}
+              placeholder="Enter OTP"
+              className="w-full text-center text-2xl font-bold tracking-[0.5em] border-2 border-gray-200 rounded-xl py-3 px-4 focus:border-[#0B4F6C] focus:outline-none transition-colors"
+              autoFocus
+            />
+
+            {otpError && (
+              <p className="text-red-500 text-xs text-center mt-2 font-medium">{otpError}</p>
+            )}
+
+            <button
+              onClick={async () => {
+                if (otpValue.length !== 4 || !orderData?.dbId) return;
+                setIsVerifyingOtp(true);
+                setOtpError("");
+
+                try {
+                  const result = await verifyOtp(orderData.dbId, otpValue);
+
+                  if (result.success) {
+                    console.log('[FRONTEND] OTP VERIFIED — order confirmed');
+                    setCheckoutStep('success');
+                    setGlobalCart([]);
+                  } else {
+                    setOtpError(result.error || "Invalid OTP. Please try again.");
+                  }
+                } catch (err) {
+                  setOtpError("Verification failed. Please try again.");
+                } finally {
+                  setIsVerifyingOtp(false);
+                }
+              }}
+              disabled={otpValue.length !== 4 || isVerifyingOtp}
+              className={`w-full mt-4 py-3 rounded-xl font-bold text-white transition-all ${
+                otpValue.length === 4 && !isVerifyingOtp
+                  ? 'bg-[#0B4F6C] hover:bg-[#093d52] active:scale-[0.98]'
+                  : 'bg-gray-300 cursor-not-allowed'
+              }`}
+            >
+              {isVerifyingOtp ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  Verifying...
+                </span>
+              ) : "Verify OTP"}
+            </button>
+
+            <p className="text-xs text-gray-400 text-center mt-3">
+              Didn&apos;t receive it? Check your WhatsApp or use test code <span className="font-bold text-gray-500">0000</span>
+            </p>
+          </div>
+        </div>
+      )}
+
       {checkoutStep === 'success' && (
-        <OrderSuccessView cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} onBackToMenu={() => { setCheckoutStep(null); setOrderData(null); }} onViewBill={() => setCheckoutStep('summary')} />
+        <OrderSuccessView cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} orderId={orderData?.orderId || ''} onBackToMenu={() => { setCheckoutStep(null); setOrderData(null); }} onViewBill={() => setCheckoutStep('summary')} />
       )}
       
       <OrderSummaryView isOpen={checkoutStep === 'summary'} cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} onBack={() => setCheckoutStep('success')} onEdit={() => { setCheckoutStep(null); }} onProceedToPay={() => setCheckoutStep('payment')} />

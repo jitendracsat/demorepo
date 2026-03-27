@@ -6,6 +6,7 @@ import { initSocket } from './socket.js';
 import orderRoutes from './routes/orderRoutes.js';
 import syncRoutes from './routes/syncRoutes.js';
 import whatsappRoutes from './routes/whatsappRoutes.js';
+import orderStatusRoutes from './routes/orderStatusRoutes.js';
 
 dotenv.config();
 
@@ -42,6 +43,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/orders', orderRoutes);
 app.use('/api/syncorder', syncRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/order', orderStatusRoutes);
 
 // Wrap Express with HTTP server and attach Socket.io
 const httpServer = createServer(app);
@@ -57,6 +59,6 @@ httpServer.listen(PORT, () => {
   console.log('  WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID || '(NOT SET)');
   console.log('  WHATSAPP_VERIFY_TOKEN:', process.env.WHATSAPP_VERIFY_TOKEN || '(NOT SET)');
   console.log('  FRONTEND_URL:', process.env.FRONTEND_URL || '(NOT SET)');
-  console.log('  Routes: /api/orders, /api/syncorder, /api/whatsapp');
+  console.log('  Routes: /api/orders, /api/syncorder, /api/whatsapp, /api/order/status');
   console.log('============================================================\n');
 });

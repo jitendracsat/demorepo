@@ -60,6 +60,11 @@ model Order {
   currency      String?     // "currency" in JSON
   status        String      @default("RECEIVED") // RECEIVED | PREPARING | SERVED
 
+  // OTP Verification Fields (security layer — separate from operational status)
+  isVerified    Boolean     @default(false)  // false until OTP verified
+  otpCode       String?     // 4-digit OTP stored until verified
+  otpExpiry     DateTime?   // OTP expiration timestamp
+
   csatSyncStatus Boolean    @default(false)
 
   createdAt     DateTime    @default(now())

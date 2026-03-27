@@ -42,11 +42,12 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: "Cart khali hai!" });
     }
 
-    // Generate unique external Order ID using timestamp to avoid collisions on restart
-    const externalOrderId = `ORD${Date.now().toString(36).toUpperCase()}`;
+    // Generate unique 8-char Order ID: B + 7 hex chars from timestamp (matches partner format e.g. B0644259)
+    const externalOrderId = `B${Date.now().toString(16).slice(-7).toUpperCase()}`;
     const currentOrderDate = new Date().toISOString();
     console.log('[ORDER CTRL DEBUG] Generated orderId:', externalOrderId);
 
+    // ============ STEP 1: Save order with isVerified: false ============
     const newOrder = await prisma.order.create({
       data: {
         // POS System Required Fields
@@ -73,8 +74,9 @@ export const createOrder = async (req, res) => {
         // Order Details
         tableNumber: tableNumber?.toString() || "Takeaway",
         paymentMethod: paymentMethod?.toString() || "PENDING",
-        currency: "INR", // Default currency
+        currency: "INR",
         status: "RECEIVED",
+        isVerified: false, // Unverified until OTP confirmed
 
         // Items with new POS fields
         items: {
@@ -86,8 +88,7 @@ export const createOrder = async (req, res) => {
             unitPrice: Number(item.price || 0),
             totalPrice: Number((item.price || 0) * (item.quantity || 1)),
             discountApplied: Number(item.discountApplied || 0),
-            modifiers: item.modifiers || [], // JSON array of modifiers
-            // Legacy fields for backward compatibility
+            modifiers: item.modifiers || [],
             price: Number(item.price || 0),
             instruction: (item.instruction || item.instructions)?.toString() || "",
           })),
@@ -98,54 +99,170 @@ export const createOrder = async (req, res) => {
 
     console.log('[ORDER CTRL] Order saved to DB. ID:', newOrder.id, '| orderId:', newOrder.orderId);
     console.log('[ORDER CTRL] Items saved:', newOrder.items.length);
+    console.log('[ORDER CTRL] isVerified:', newOrder.isVerified);
 
-    // CONSTRUCT EXACT POS PAYLOAD
-    const posPayload = {
-      outletId: newOrder.outletId || "010",
-      restaurantid: newOrder.restaurantId || "210014",
-      OrderId: newOrder.orderId,
-      OrderDate: newOrder.orderDate.toISOString(),
-      PosCode: newOrder.posCode || "001",
-      TblNo: newOrder.tableNumber,
-      guest: {
-        guestId: newOrder.guestId || "",
-        name: newOrder.guestName || "",
-        phone: newOrder.guestPhone || "",
-        email: newOrder.guestEmail || "",
-        dateOfBirth: newOrder.guestDob || "",
-        anniversary: newOrder.guestAnniversary || ""
+    // ============ STEP 2: Generate OTP & store in DB ============
+    const otpCode = String(Math.floor(1000 + Math.random() * 9000));
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+
+    console.log('\n------------------------------------------------------------');
+    console.log('[ORDER CTRL] >>> OTP GENERATED <<<');
+    console.log('[ORDER CTRL] OTP Code:', otpCode);
+    console.log('[ORDER CTRL] OTP Expiry:', otpExpiry.toISOString());
+    console.log('[ORDER CTRL] Order DB ID:', newOrder.id);
+    console.log('------------------------------------------------------------');
+
+    await prisma.order.update({
+      where: { id: newOrder.id },
+      data: { otpCode, otpExpiry },
+    });
+
+    // ============ STEP 3: WhatsApp OTP (non-blocking) ============
+    const customerPhone = guestPhone || '';
+    console.log('[ORDER CTRL] guestPhone:', guestPhone, '| customerPhone:', customerPhone);
+
+    if (customerPhone) {
+      try {
+        console.log('[ORDER CTRL] Calling sendOTP() with phone:', customerPhone);
+        const otpResult = await sendOTP(customerPhone);
+        console.log('[ORDER CTRL] sendOTP() returned:', JSON.stringify(otpResult, null, 2));
+
+        if (otpResult.success) {
+          console.log('[ORDER CTRL] WhatsApp OTP SENT. OTP:', otpResult.otp, '| mock:', otpResult.mock || false);
+        } else {
+          console.log('[ORDER CTRL] WhatsApp OTP FAILED:', otpResult.error);
+        }
+      } catch (waError) {
+        // Log but DO NOT crash — OTP is stored in DB, user can use fallback "0000"
+        console.error('[ORDER CTRL] WhatsApp error (NON-BLOCKING):', waError.message);
+      }
+    } else {
+      console.log('[ORDER CTRL] SKIPPED WhatsApp — no guestPhone in request body');
+    }
+
+    // 🚨 NO POS SYNC here — moved to verifyOTP
+    // 🚨 NO Socket.io emission here — moved to verifyOTP
+
+    console.log('[ORDER CTRL] Sending 201 response — awaiting OTP verification');
+    res.status(201).json({
+      success: true,
+      message: "Order created — OTP verification required",
+      orderId: newOrder.id,
+      externalOrderId: newOrder.orderId,
+    });
+  } catch (error) {
+    console.error('[ORDER CTRL] FATAL ERROR:', error.message);
+    console.error('[ORDER CTRL] Error stack:', error.stack);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 2. VERIFY OTP (Step 2 of order flow)
+export const verifyOTP = async (req, res) => {
+  try {
+    const { orderId, userOtp } = req.body;
+
+    console.log('\n############################################################');
+    console.log('[VERIFY OTP] >>> OTP VERIFICATION REQUEST <<<');
+    console.log('[VERIFY OTP] Timestamp:', new Date().toISOString());
+    console.log('[VERIFY OTP] orderId:', orderId, '| userOtp:', userOtp);
+    console.log('############################################################');
+
+    if (!orderId || !userOtp) {
+      return res.status(400).json({ success: false, message: 'orderId and userOtp are required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: String(orderId) },
+      include: { items: true },
+    });
+
+    if (!order) {
+      console.log('[VERIFY OTP] Order NOT FOUND:', orderId);
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    if (order.isVerified) {
+      console.log('[VERIFY OTP] Order already verified:', orderId);
+      return res.status(400).json({ success: false, message: 'Order already verified' });
+    }
+
+    // TESTING FALLBACK: "0000" is the master OTP — bypasses expiry check
+    const isMasterOtp = userOtp === "0000";
+    const isOtpMatch = userOtp === order.otpCode;
+
+    console.log('[VERIFY OTP] DB otpCode:', order.otpCode, '| userOtp:', userOtp);
+    console.log('[VERIFY OTP] isMasterOtp:', isMasterOtp, '| isOtpMatch:', isOtpMatch);
+
+    if (!isMasterOtp && !isOtpMatch) {
+      console.log('[VERIFY OTP] REJECTED — OTP mismatch');
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    // Check expiry only for non-master OTPs
+    if (!isMasterOtp && order.otpExpiry && new Date() > new Date(order.otpExpiry)) {
+      console.log('[VERIFY OTP] REJECTED — OTP expired at:', order.otpExpiry);
+      return res.status(400).json({ success: false, message: 'OTP has expired' });
+    }
+
+    // ============ OTP VALID — Mark as verified & clear OTP fields ============
+    const verifiedOrder = await prisma.order.update({
+      where: { id: String(orderId) },
+      data: {
+        isVerified: true,
+        otpCode: null,
+        otpExpiry: null,
       },
-      subtotal: newOrder.subtotal || 0,
-      discountAmount: newOrder.discountAmount || 0,
-      taxAmount: newOrder.taxAmount || 0,
-      totalAmount: newOrder.totalAmount,
-      paymentMethod: newOrder.paymentMethod || "",
-      currency: newOrder.currency || "INR",
-      items: cartItems.map(item => ({
-        itemId: item.id?.toString() || item.itemId?.toString(),
-        itemName: item.name?.toString() || item.itemName?.toString() || "Unknown Item",
-        category: item.category?.toString() || "Uncategorized",
+      include: { items: true },
+    });
+
+    console.log('[VERIFY OTP] Order VERIFIED:', verifiedOrder.id, '| isVerified:', verifiedOrder.isVerified);
+
+    // ============ POS PROXY SYNC (moved from createOrder) ============
+    const safe = (val, maxLen) => val ? String(val).substring(0, maxLen) : "";
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+    const posPayload = {
+      outletId: safe(verifiedOrder.outletId, 10) || "010",
+      restaurantid: safe(verifiedOrder.restaurantId, 10) || "210014",
+      OrderId: verifiedOrder.orderId,
+      OrderDate: verifiedOrder.orderDate.toISOString(),
+      PosCode: safe(verifiedOrder.posCode, 10) || "001",
+      TblNo: safe(verifiedOrder.tableNumber, 10),
+      guest: {
+        guestId: safe(verifiedOrder.guestId, 20),
+        name: safe(verifiedOrder.guestName, 50),
+        phone: safe(verifiedOrder.guestPhone, 15),
+        email: safe(verifiedOrder.guestEmail, 50),
+        dateOfBirth: safe(verifiedOrder.guestDob, 20),
+        anniversary: safe(verifiedOrder.guestAnniversary, 20)
+      },
+      subtotal: round2(verifiedOrder.subtotal),
+      discountAmount: round2(verifiedOrder.discountAmount),
+      taxAmount: round2(verifiedOrder.taxAmount),
+      totalAmount: round2(verifiedOrder.totalAmount),
+      paymentMethod: safe(verifiedOrder.paymentMethod, 20),
+      currency: safe(verifiedOrder.currency, 5) || "INR",
+      items: verifiedOrder.items.map(item => ({
+        itemId: safe(item.itemId, 10),
+        itemName: safe(item.itemName, 50),
+        category: safe(item.category, 10) || "General",
         quantity: Number(item.quantity || 1),
-        unitPrice: Number(item.price || 0),
-        totalPrice: Number((item.price || 0) * (item.quantity || 1)),
+        unitPrice: round2(item.unitPrice),
+        totalPrice: round2(item.totalPrice),
         modifiers: item.modifiers || [],
-        discountApplied: Number(item.discountApplied || 0)
+        discountApplied: round2(item.discountApplied)
       }))
     };
 
-    console.log("[ORDER CTRL] POS PAYLOAD:\n", JSON.stringify(posPayload, null, 2));
+    console.log("[VERIFY OTP] POS PAYLOAD:\n", JSON.stringify(posPayload, null, 2));
 
-    // ============ SYNC TO CSAT PROXY (NON-BLOCKING) ============
     try {
       const proxySecret = process.env.PROXY_SECRET;
       const proxyUrl = 'https://proxy.csatspl.com/api/syncorder';
 
-      console.log('\n------------------------------------------------------------');
-      console.log('[PROXY SYNC] >>> SENDING ORDER TO CSAT PROXY <<<');
+      console.log('[PROXY SYNC] >>> SENDING VERIFIED ORDER TO CSAT PROXY <<<');
       console.log('[PROXY SYNC] URL:', proxyUrl);
-      console.log('[PROXY SYNC] PROXY_SECRET present:', !!proxySecret, '| length:', proxySecret?.length || 0);
-      console.log('[PROXY SYNC] Payload:', JSON.stringify(posPayload, null, 2));
-      console.log('------------------------------------------------------------');
 
       const proxyStartTime = Date.now();
       const proxyRes = await fetch(proxyUrl, {
@@ -163,76 +280,42 @@ export const createOrder = async (req, res) => {
       const proxyElapsed = Date.now() - proxyStartTime;
       const proxyData = await proxyRes.json().catch(() => null);
 
-      console.log('[PROXY SYNC] Response in', proxyElapsed, 'ms');
-      console.log('[PROXY SYNC] HTTP status:', proxyRes.status);
-      console.log('[PROXY SYNC] Response body:', JSON.stringify(proxyData, null, 2));
+      console.log('[PROXY SYNC] Response in', proxyElapsed, 'ms | HTTP:', proxyRes.status);
+      console.log('[PROXY SYNC] Body:', JSON.stringify(proxyData, null, 2));
 
       if (proxyRes.ok) {
         console.log('[PROXY SYNC] Order synced to CSAT proxy successfully');
       } else {
-        console.error('[PROXY SYNC] CSAT proxy rejected — status:', proxyRes.status, '| body:', JSON.stringify(proxyData));
+        console.error('[PROXY SYNC] CSAT proxy rejected — status:', proxyRes.status);
       }
     } catch (proxyError) {
-      // Log but DO NOT crash the server or stop the order flow
       console.error('[PROXY SYNC] FAILED (NON-BLOCKING):', proxyError.message);
-      console.error('[PROXY SYNC] Error stack:', proxyError.stack);
     }
 
-    // ============ WHATSAPP OTP STEP ============
-    const customerPhone = guestPhone || '';
-    console.log('\n------------------------------------------------------------');
-    console.log('[ORDER CTRL] >>> WHATSAPP OTP STEP <<<');
-    console.log('[ORDER CTRL] guestPhone from req.body:', guestPhone);
-    console.log('[ORDER CTRL] customerPhone resolved:', customerPhone);
-    console.log('[ORDER CTRL] customerPhone truthy?', !!customerPhone);
-    console.log('[ORDER CTRL] customerPhone length:', customerPhone.length);
-    console.log('------------------------------------------------------------');
-
-    if (customerPhone) {
-      try {
-        console.log('[ORDER CTRL] Calling sendOTP() with phone:', customerPhone);
-        const otpResult = await sendOTP(customerPhone);
-        console.log('[ORDER CTRL] sendOTP() returned:', JSON.stringify(otpResult, null, 2));
-
-        if (otpResult.success) {
-          console.log('[ORDER CTRL] WhatsApp OTP SENT. OTP:', otpResult.otp, '| mock:', otpResult.mock || false);
-        } else {
-          console.log('[ORDER CTRL] WhatsApp OTP FAILED:', otpResult.error);
-        }
-      } catch (waError) {
-        // Log but DO NOT crash the server or stop the order flow
-        console.error('[ORDER CTRL] WhatsApp error (NON-BLOCKING):', waError.message);
-        console.error('[ORDER CTRL] WhatsApp error stack:', waError.stack);
-      }
-    } else {
-      console.log('[ORDER CTRL] SKIPPED WhatsApp — no guestPhone in request body');
-    }
-
-    // Emit to Kitchen Display System
+    // ============ SOCKET.IO KDS EMISSION (moved from createOrder) ============
     const io = getIO();
     if (io) {
-      io.emit('NEW_ORDER_RECEIVED', newOrder);
-      console.log('[ORDER CTRL] Socket.io emitted NEW_ORDER_RECEIVED');
+      io.emit('NEW_ORDER_RECEIVED', verifiedOrder);
+      console.log('[VERIFY OTP] Socket.io emitted NEW_ORDER_RECEIVED');
     } else {
-      console.log('[ORDER CTRL] WARNING: Socket.io not available, could not emit');
+      console.log('[VERIFY OTP] WARNING: Socket.io not available');
     }
 
-    console.log('[ORDER CTRL] Sending 201 response to client');
-    res.status(201).json({
+    console.log('[VERIFY OTP] Sending 200 OK');
+    res.status(200).json({
       success: true,
-      message: "Order logged!",
-      order: newOrder,
-      posPayload: posPayload,
-      orderId: newOrder.id
+      message: 'Order verified successfully',
+      order: verifiedOrder,
+      posPayload,
     });
   } catch (error) {
-    console.error('[ORDER CTRL] FATAL ERROR:', error.message);
-    console.error('[ORDER CTRL] Error stack:', error.stack);
+    console.error('[VERIFY OTP] FATAL ERROR:', error.message);
+    console.error('[VERIFY OTP] Stack:', error.stack);
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// 2. GET ALL ORDERS
+// 3. GET ALL ORDERS
 export const getAllOrders = async (req, res) => {
   try {
     const allOrders = await prisma.order.findMany({
@@ -372,8 +455,85 @@ export const posStatusWebhook = async (req, res) => {
       status: mappedStatus,
     });
   } catch (error) {
-    console.error('[POS WEBHOOK] ERROR:', error.message);
-    console.error('[POS WEBHOOK] Stack:', error.stack);
+    console.error('[POS INBOUND] ERROR:', error.message);
+    console.error('[POS INBOUND] Stack:', error.stack);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 6. INBOUND POS STATUS VIA QUERY PARAMS
+// GET/POST /api/order/status?restaurantId=X&outletId=X&orderId=X&status=X
+// Called by partner POS: http://orderstatus.csatcloud.com/api/order/status?...
+// Status: 1=Accepted, 2=Rejected, 3=Food Ready, 4=Served
+const INBOUND_STATUS_MAP = {
+  '1': 'ACCEPTED',
+  '2': 'REJECTED',
+  '3': 'FOOD_READY',
+  '4': 'SERVED',
+};
+
+export const inboundOrderStatus = async (req, res) => {
+  try {
+    const { restaurantId, outletId, orderId, status } = req.query;
+
+    console.log('\n############################################################');
+    console.log('[POS INBOUND] >>> STATUS UPDATE VIA QUERY PARAMS <<<');
+    console.log('[POS INBOUND] Timestamp:', new Date().toISOString());
+    console.log('[POS INBOUND] Method:', req.method);
+    console.log('[POS INBOUND] Query params:', JSON.stringify(req.query));
+    console.log('[POS INBOUND] restaurantId:', restaurantId);
+    console.log('[POS INBOUND] outletId:', outletId);
+    console.log('[POS INBOUND] orderId:', orderId);
+    console.log('[POS INBOUND] status:', status);
+    console.log('############################################################');
+
+    if (!orderId || status == null) {
+      console.log('[POS INBOUND] REJECTED — missing orderId or status');
+      return res.status(400).json({ success: false, message: 'Missing required query params: orderId and status' });
+    }
+
+    const mappedStatus = INBOUND_STATUS_MAP[String(status)];
+    if (!mappedStatus) {
+      console.log('[POS INBOUND] REJECTED — unknown status:', status);
+      return res.status(400).json({ success: false, message: `Unknown status: ${status}. Expected: 1=Accepted, 2=Rejected, 3=Food Ready, 4=Served` });
+    }
+
+    console.log('[POS INBOUND] Mapped:', status, '→', mappedStatus);
+
+    // Find order by external orderId
+    const order = await prisma.order.findUnique({
+      where: { orderId: String(orderId) },
+    });
+
+    if (!order) {
+      console.log('[POS INBOUND] Order NOT FOUND for orderId:', orderId);
+      return res.status(404).json({ success: false, message: `Order ${orderId} not found` });
+    }
+
+    console.log('[POS INBOUND] Found — DB id:', order.id, '| current status:', order.status);
+
+    // Update status in DB
+    const updatedOrder = await prisma.order.update({
+      where: { orderId: String(orderId) },
+      data: { status: mappedStatus },
+    });
+
+    console.log('[POS INBOUND] DB updated — new status:', updatedOrder.status);
+
+    // Emit real-time event to frontend
+    const io = getIO();
+    if (io) {
+      io.emit('ORDER_STATUS_CHANGED', { orderId: String(orderId), status: mappedStatus });
+      console.log('[POS INBOUND] Socket.io emitted ORDER_STATUS_CHANGED:', { orderId: String(orderId), status: mappedStatus });
+    } else {
+      console.log('[POS INBOUND] WARNING: Socket.io not available');
+    }
+
+    console.log('[POS INBOUND] Responding 200 OK');
+    return res.status(200).json({ success: true, message: 'Status updated successfully' });
+  } catch (error) {
+    console.error('[POS INBOUND] ERROR:', error.message);
+    console.error('[POS INBOUND] Stack:', error.stack);
     return res.status(500).json({ success: false, error: error.message });
   }
 };
