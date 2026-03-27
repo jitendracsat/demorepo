@@ -5,8 +5,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // Guest Table (unique by phone number)
@@ -60,10 +61,10 @@ model Order {
   currency      String?     // "currency" in JSON
   status        String      @default("RECEIVED") // RECEIVED | PREPARING | SERVED
 
-  // OTP Verification Fields (security layer — separate from operational status)
-  isVerified    Boolean     @default(false)  // false until OTP verified
-  otpCode       String?     // 4-digit OTP stored until verified
-  otpExpiry     DateTime?   // OTP expiration timestamp
+  // OTP Verification
+  isVerified    Boolean     @default(false)
+  otpCode       String?
+  otpExpiry     DateTime?
 
   csatSyncStatus Boolean    @default(false)
 
@@ -104,3 +105,4 @@ model OrderItem {
   price       Float?   // Keep for existing code
   instruction String?  // Keep for existing code
 }
+
