@@ -2,6 +2,32 @@ import prisma from '../config/prisma.js';
 import { sendOTP } from '../services/whatsapp.js';
 import { getIO } from '../socket.js';
 
+// ═══════════════════════════════════════════════════════════
+// UNIFIED STATUS MAPPING — Single source of truth
+// Numeric (from external POS) → String (stored in DB & sent to frontend)
+// ═══════════════════════════════════════════════════════════
+const NUMERIC_TO_STATUS = {
+  '0': 'RECEIVED',
+  '1': 'ACCEPTED',
+  '2': 'REJECTED',
+  '3': 'FOOD_READY',
+  '4': 'ORDER_READY',
+  '5': 'DELIVERED',
+};
+
+// Word-based status strings that are already valid (no mapping needed)
+const VALID_STATUSES = ['RECEIVED', 'ACCEPTED', 'REJECTED', 'FOOD_READY', 'ORDER_READY', 'DELIVERED', 'PREPARING'];
+
+// Resolve any incoming status (numeric string OR word) to a valid DB status
+function resolveStatus(raw) {
+  const str = String(raw).trim().toUpperCase();
+  // First check numeric mapping
+  if (NUMERIC_TO_STATUS[str]) return NUMERIC_TO_STATUS[str];
+  // Then check if it's already a valid word status
+  if (VALID_STATUSES.includes(str)) return str;
+  return null; // invalid
+}
+
 // 1. PUNCH ORDER
 export const createOrder = async (req, res) => {
   try {
@@ -368,35 +394,98 @@ export const getBillById = async (req, res) => {
   }
 };
 
-// 4. UPDATE ORDER STATUS (Kitchen Display System)
+// 4. UPDATE ORDER STATUS (Kitchen Display System — Accept / Reject)
 export const updateOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    const validStatuses = ['RECEIVED', 'PREPARING', 'SERVED'];
-    if (!validStatuses.includes(status)) {
+    console.log('\n############################################################');
+    console.log('--- [KDS] Status Update Request ---');
+    console.log('[KDS] Timestamp:', new Date().toISOString());
+    console.log('[KDS] DB id:', id, '| Requested status:', status);
+    console.log('############################################################');
+
+    // Resolve numeric or word status using unified mapping
+    const resolvedStatus = resolveStatus(status);
+    if (!resolvedStatus) {
       return res.status(400).json({
         success: false,
-        message: `Invalid status. Accepted values: ${validStatuses.join(', ')}`,
+        message: `Invalid status "${status}". Accepted: ${VALID_STATUSES.join(', ')} or numeric 0-5`,
       });
     }
 
+    console.log('[KDS] Resolved status:', status, '→', resolvedStatus);
+
+    // ── STEP 1: Save resolved status to local DB ──
     const updatedOrder = await prisma.order.update({
       where: { id },
-      data: { status },
+      data: { status: resolvedStatus },
       include: { items: true },
     });
 
-    // Push status change to all connected clients (bill page + KDS)
-    const io = getIO();
-    if (io) {
-      io.emit('ORDER_STATUS_UPDATED', { id: updatedOrder.id, status: updatedOrder.status });
+    console.log('[KDS] DB updated — orderId:', updatedOrder.orderId, '| new status:', updatedOrder.status);
+
+    // ── STEP 2: Call external CSAT API to fetch finalized status ──
+    let externalStatus = null;
+    try {
+      const restaurantId = String(updatedOrder.restaurantId || '240018');
+      const outletId = String(updatedOrder.outletId || '020');
+      const orderId = String(updatedOrder.orderId);
+
+      const externalUrl = `http://orderstatus.csatcloud.com/api/order/status?restaurantId=${restaurantId}&outletId=${outletId}&orderId=${orderId}`;
+      console.log('[KDS] >>> Fetching external CSAT status <<<');
+      console.log('[KDS] URL:', externalUrl);
+
+      const extStartTime = Date.now();
+      const extRes = await fetch(externalUrl);
+      const extData = await extRes.json();
+      const extElapsed = Date.now() - extStartTime;
+
+      console.log('[KDS] External API responded in', extElapsed, 'ms | HTTP:', extRes.status);
+      console.log('[KDS] External response:', JSON.stringify(extData, null, 2));
+
+      if (extData.success && extData.data && extData.data.status) {
+        // The external API may return numeric or word — resolve it
+        const extResolved = resolveStatus(extData.data.status);
+        externalStatus = extResolved || extData.data.status;
+        console.log('[KDS] Extracted external status:', extData.data.status, '→ resolved:', externalStatus);
+      } else {
+        console.warn('[KDS] External API returned unexpected format — using local status');
+      }
+    } catch (extError) {
+      console.error('[KDS] External API call FAILED (NON-BLOCKING):', extError.message);
     }
 
-    res.status(200).json({ success: true, order: updatedOrder });
+    // ── STEP 3: Emit BOTH socket events to frontend ──
+    const finalStatus = externalStatus || updatedOrder.status;
+    const io = getIO();
+    if (io) {
+      const payload = {
+        id: updatedOrder.id,
+        orderId: String(updatedOrder.orderId),
+        dbId: updatedOrder.id,
+        status: finalStatus,
+        externalStatus,
+        localStatus: updatedOrder.status,
+      };
+      io.emit('ORDER_STATUS_UPDATED', payload);
+      io.emit('ORDER_STATUS_CHANGED', payload);
+      console.log('[KDS] Socket.io emitted ORDER_STATUS_UPDATED + ORDER_STATUS_CHANGED:', JSON.stringify(payload));
+    } else {
+      console.warn('[KDS] WARNING: Socket.io not available');
+    }
+
+    console.log('[KDS] Responding 200 OK | finalStatus:', finalStatus);
+    res.status(200).json({
+      success: true,
+      order: updatedOrder,
+      externalStatus,
+      finalStatus,
+    });
   } catch (error) {
-    console.error('[ORDER CTRL] Status Update Error:', error);
+    console.error('[KDS] Status Update Error:', error.message);
+    console.error('[KDS] Stack:', error.stack);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -404,13 +493,7 @@ export const updateOrderStatus = async (req, res) => {
 // 5. INBOUND POS STATUS WEBHOOK
 // POST /api/orders/status-update
 // Called by partner POS system to push status changes
-// Status codes: 1 = Accepted, 2 = Rejected, 3 = Food Ready, 4 = Served
-const POS_STATUS_MAP = {
-  1: 'ACCEPTED',
-  2: 'REJECTED',
-  3: 'FOOD_READY',
-  4: 'SERVED',
-};
+// Uses unified NUMERIC_TO_STATUS mapping: 1=Accepted, 2=Rejected, 3=Food Ready, 4=Order Ready, 5=Delivered
 
 export const posStatusWebhook = async (req, res) => {
   try {
@@ -429,10 +512,10 @@ export const posStatusWebhook = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required fields: OrderId and Status' });
     }
 
-    const mappedStatus = POS_STATUS_MAP[Number(Status)];
+    const mappedStatus = resolveStatus(Status);
     if (!mappedStatus) {
       console.log('[POS WEBHOOK] REJECTED — unknown status code:', Status);
-      return res.status(400).json({ success: false, message: `Unknown status code: ${Status}. Accepted: 1 (Accepted), 2 (Rejected), 3 (Food Ready), 4 (Served)` });
+      return res.status(400).json({ success: false, message: `Unknown status code: ${Status}. Accepted: 0-5 or ${VALID_STATUSES.join(', ')}` });
     }
 
     console.log('[POS WEBHOOK] Mapped status:', Status, '→', mappedStatus);
@@ -457,12 +540,13 @@ export const posStatusWebhook = async (req, res) => {
 
     console.log('[POS WEBHOOK] DB updated — new status:', updatedOrder.status);
 
-    // Emit real-time event to frontend (include both DB UUID and external orderId for matching)
+    // Emit BOTH real-time events to frontend
     const io = getIO();
     if (io) {
-      const payload = { orderId: String(OrderId), dbId: order.id, status: mappedStatus };
+      const payload = { id: order.id, orderId: String(OrderId), dbId: order.id, status: mappedStatus };
+      io.emit('ORDER_STATUS_UPDATED', payload);
       io.emit('ORDER_STATUS_CHANGED', payload);
-      console.log('[POS WEBHOOK] Socket.io emitted ORDER_STATUS_CHANGED:', payload);
+      console.log('[POS WEBHOOK] Socket.io emitted ORDER_STATUS_UPDATED + ORDER_STATUS_CHANGED:', JSON.stringify(payload));
     } else {
       console.log('[POS WEBHOOK] WARNING: Socket.io not available');
     }
@@ -484,13 +568,7 @@ export const posStatusWebhook = async (req, res) => {
 // 6. INBOUND POS STATUS VIA QUERY PARAMS
 // GET/POST /api/order/status?restaurantId=X&outletId=X&orderId=X&status=X
 // Called by partner POS: http://orderstatus.csatcloud.com/api/order/status?...
-// Status: 1=Accepted, 2=Rejected, 3=Food Ready, 4=Served
-const INBOUND_STATUS_MAP = {
-  '1': 'ACCEPTED',
-  '2': 'REJECTED',
-  '3': 'FOOD_READY',
-  '4': 'SERVED',
-};
+// Uses unified NUMERIC_TO_STATUS mapping: 0-5 or word statuses
 
 export const inboundOrderStatus = async (req, res) => {
   try {
@@ -512,10 +590,10 @@ export const inboundOrderStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required query params: orderId and status' });
     }
 
-    const mappedStatus = INBOUND_STATUS_MAP[String(status)];
+    const mappedStatus = resolveStatus(status);
     if (!mappedStatus) {
       console.log('[POS INBOUND] REJECTED — unknown status:', status);
-      return res.status(400).json({ success: false, message: `Unknown status: ${status}. Expected: 1=Accepted, 2=Rejected, 3=Food Ready, 4=Served` });
+      return res.status(400).json({ success: false, message: `Unknown status: ${status}. Accepted: 0-5 or ${VALID_STATUSES.join(', ')}` });
     }
 
     console.log('[POS INBOUND] Mapped:', status, '→', mappedStatus);
@@ -540,12 +618,13 @@ export const inboundOrderStatus = async (req, res) => {
 
     console.log('[POS INBOUND] DB updated — new status:', updatedOrder.status);
 
-    // Emit real-time event to frontend (include both DB UUID and external orderId for matching)
+    // Emit BOTH real-time events to frontend
     const io = getIO();
     if (io) {
-      const payload = { orderId: String(orderId), dbId: order.id, status: mappedStatus };
+      const payload = { id: order.id, orderId: String(orderId), dbId: order.id, status: mappedStatus };
+      io.emit('ORDER_STATUS_UPDATED', payload);
       io.emit('ORDER_STATUS_CHANGED', payload);
-      console.log('[POS INBOUND] Socket.io emitted ORDER_STATUS_CHANGED:', payload);
+      console.log('[POS INBOUND] Socket.io emitted ORDER_STATUS_UPDATED + ORDER_STATUS_CHANGED:', JSON.stringify(payload));
     } else {
       console.log('[POS INBOUND] WARNING: Socket.io not available');
     }

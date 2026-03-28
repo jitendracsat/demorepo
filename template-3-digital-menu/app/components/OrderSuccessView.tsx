@@ -19,6 +19,7 @@ export interface OrderSuccessProps {
 }
 
 // Status config: icon, colors, title, subtitle, showTimer
+// Mapped to user's exact POS status codes: 0=Placed, 1=Accepted, 2=Rejected, 3=Food Ready, 4=Order Ready, 5=Delivered
 const STATUS_CONFIG: Record<string, { bg: string; title: string; subtitle: string; showTimer: boolean; icon: 'spinner' | 'check' | 'cross' | 'bell' }> = {
   '0': {
     bg: 'bg-[#0B4F6C]',
@@ -37,7 +38,7 @@ const STATUS_CONFIG: Record<string, { bg: string; title: string; subtitle: strin
   '2': {
     bg: 'bg-red-500',
     title: 'Order Rejected',
-    subtitle: 'Sorry, the restaurant cannot fulfill your order right now.',
+    subtitle: 'Sorry, the restaurant cannot fulfill your order right now. Please try again or contact staff.',
     showTimer: false,
     icon: 'cross',
   },
@@ -45,19 +46,19 @@ const STATUS_CONFIG: Record<string, { bg: string; title: string; subtitle: strin
     bg: 'bg-orange-400',
     title: 'Food is Ready!',
     subtitle: 'The kitchen has finished preparing your order.',
-    showTimer: true,
+    showTimer: false,
     icon: 'bell',
   },
   '4': {
     bg: 'bg-green-500',
-    title: 'Order Ready to Serve!',
+    title: 'Order Ready!',
     subtitle: 'Your food is ready to be brought to your table.',
     showTimer: false,
     icon: 'check',
   },
   '5': {
     bg: 'bg-green-500',
-    title: 'Order Delivered!',
+    title: 'Delivered!',
     subtitle: 'Enjoy your meal!',
     showTimer: false,
     icon: 'check',
@@ -65,13 +66,14 @@ const STATUS_CONFIG: Record<string, { bg: string; title: string; subtitle: strin
 };
 
 // Normalize both numeric strings ("1") and word strings ("ACCEPTED") to the STATUS_CONFIG keys
+// Strict mapping matching backend NUMERIC_TO_STATUS: 0=RECEIVED, 1=ACCEPTED, 2=REJECTED, 3=FOOD_READY, 4=ORDER_READY, 5=DELIVERED
 function normalizeStatus(raw: string): string {
   const map: Record<string, string> = {
-    '0': '0', 'PLACED': '0',
+    '0': '0', 'PLACED': '0', 'RECEIVED': '0',
     '1': '1', 'ACCEPTED': '1',
     '2': '2', 'REJECTED': '2',
-    '3': '3', 'FOOD_READY': '3',
-    '4': '4', 'SERVED': '4',
+    '3': '3', 'FOOD_READY': '3', 'PREPARING': '1',
+    '4': '4', 'ORDER_READY': '4', 'SERVED': '4',
     '5': '5', 'DELIVERED': '5',
   };
   return map[raw.toUpperCase()] || '0';
@@ -114,11 +116,13 @@ export default function OrderSuccessView({
     };
 
     socket.on('ORDER_STATUS_CHANGED', handleStatusChange);
+    socket.on('ORDER_STATUS_UPDATED', handleStatusChange);
     console.log('--- [STAGE 4] FRONTEND: Checking Order Status ---');
-    console.log('[STAGE 4] Listening for ORDER_STATUS_CHANGED | orderId:', orderId);
+    console.log('[STAGE 4] Listening for ORDER_STATUS_CHANGED + ORDER_STATUS_UPDATED | orderId:', orderId);
 
     return () => {
       socket.off('ORDER_STATUS_CHANGED', handleStatusChange);
+      socket.off('ORDER_STATUS_UPDATED', handleStatusChange);
     };
   }, [orderId, dbId]);
 

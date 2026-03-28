@@ -14,24 +14,40 @@ interface OrderItem {
   modifiers: string[];
 }
 
+type OrderStatusType = 'RECEIVED' | 'ACCEPTED' | 'REJECTED' | 'PREPARING' | 'FOOD_READY' | 'ORDER_READY' | 'DELIVERED';
+
 interface Order {
   id: string;
   orderId: string;
   tableNumber: string;
   guestName: string;
-  status: 'RECEIVED' | 'PREPARING' | 'SERVED';
+  status: OrderStatusType;
   totalAmount: number;
   createdAt: string;
   items: OrderItem[];
 }
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<string, { label: string; bg: string; border: string; badge: string; dot: string }> = {
   RECEIVED: {
     label: 'New Order',
     bg: 'bg-amber-50',
     border: 'border-amber-400',
     badge: 'bg-amber-100 text-amber-800',
     dot: 'bg-amber-500',
+  },
+  ACCEPTED: {
+    label: 'Accepted',
+    bg: 'bg-green-50',
+    border: 'border-green-400',
+    badge: 'bg-green-100 text-green-800',
+    dot: 'bg-green-500',
+  },
+  REJECTED: {
+    label: 'Rejected',
+    bg: 'bg-red-50',
+    border: 'border-red-400',
+    badge: 'bg-red-100 text-red-800',
+    dot: 'bg-red-500',
   },
   PREPARING: {
     label: 'Preparing',
@@ -40,14 +56,28 @@ const STATUS_CONFIG = {
     badge: 'bg-blue-100 text-blue-800',
     dot: 'bg-blue-500',
   },
-  SERVED: {
-    label: 'Served',
+  FOOD_READY: {
+    label: 'Food Ready',
+    bg: 'bg-orange-50',
+    border: 'border-orange-400',
+    badge: 'bg-orange-100 text-orange-800',
+    dot: 'bg-orange-500',
+  },
+  ORDER_READY: {
+    label: 'Order Ready',
     bg: 'bg-green-50',
     border: 'border-green-400',
     badge: 'bg-green-100 text-green-800',
     dot: 'bg-green-500',
   },
-} as const;
+  DELIVERED: {
+    label: 'Delivered',
+    bg: 'bg-green-50',
+    border: 'border-green-400',
+    badge: 'bg-green-100 text-green-800',
+    dot: 'bg-green-500',
+  },
+};
 
 function ElapsedTime({ createdAt }: { createdAt: string }) {
   const [elapsed, setElapsed] = useState('');
@@ -136,27 +166,64 @@ function OrderCard({
         <p className="text-sm font-bold text-gray-900">
           ₹{order.totalAmount?.toFixed(0)}
         </p>
-        {order.status === 'RECEIVED' && (
-          <button
-            onClick={() => handleAction('PREPARING')}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
-          >
-            {loading ? 'Updating…' : 'Start Preparing'}
-          </button>
-        )}
-        {order.status === 'PREPARING' && (
-          <button
-            onClick={() => handleAction('SERVED')}
-            disabled={loading}
-            className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
-          >
-            {loading ? 'Updating…' : 'Mark Served'}
-          </button>
-        )}
-        {order.status === 'SERVED' && (
-          <span className="text-green-700 text-sm font-semibold">✓ Served</span>
-        )}
+        <div className="flex gap-2">
+          {/* New order — Accept or Reject */}
+          {order.status === 'RECEIVED' && (
+            <>
+              <button
+                onClick={() => handleAction('REJECTED')}
+                disabled={loading}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                {loading ? '…' : 'Reject'}
+              </button>
+              <button
+                onClick={() => handleAction('ACCEPTED')}
+                disabled={loading}
+                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                {loading ? '…' : 'Accept'}
+              </button>
+            </>
+          )}
+          {/* Accepted — Mark Food Ready */}
+          {(order.status === 'ACCEPTED' || order.status === 'PREPARING') && (
+            <button
+              onClick={() => handleAction('FOOD_READY')}
+              disabled={loading}
+              className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+            >
+              {loading ? 'Updating…' : 'Food Ready'}
+            </button>
+          )}
+          {/* Food Ready — Mark Order Ready */}
+          {order.status === 'FOOD_READY' && (
+            <button
+              onClick={() => handleAction('ORDER_READY')}
+              disabled={loading}
+              className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+            >
+              {loading ? 'Updating…' : 'Order Ready'}
+            </button>
+          )}
+          {/* Order Ready — Mark Delivered */}
+          {order.status === 'ORDER_READY' && (
+            <button
+              onClick={() => handleAction('DELIVERED')}
+              disabled={loading}
+              className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+            >
+              {loading ? 'Updating…' : 'Mark Delivered'}
+            </button>
+          )}
+          {/* Terminal states */}
+          {order.status === 'DELIVERED' && (
+            <span className="text-green-700 text-sm font-semibold">✓ Delivered</span>
+          )}
+          {order.status === 'REJECTED' && (
+            <span className="text-red-700 text-sm font-semibold">✗ Rejected</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -181,7 +248,7 @@ export default function KitchenPage() {
       })
       .then((data: Order[]) => {
         const sorted = [...data].sort((a, b) => {
-          const priority = { RECEIVED: 0, PREPARING: 1, SERVED: 2 };
+          const priority: Record<string, number> = { RECEIVED: 0, ACCEPTED: 1, PREPARING: 2, FOOD_READY: 3, ORDER_READY: 4, DELIVERED: 5, REJECTED: 6 };
           const diff = (priority[a.status] ?? 99) - (priority[b.status] ?? 99);
           if (diff !== 0) return diff;
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -259,8 +326,10 @@ export default function KitchenPage() {
       });
     });
 
-    socket.on('ORDER_STATUS_UPDATED', ({ id, status }: { id: string; status: Order['status'] }) => {
-      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
+    socket.on('ORDER_STATUS_UPDATED', (data: { id?: string; orderId?: string; dbId?: string; status?: string }) => {
+      const matchId = data.id || data.dbId || '';
+      const newStatus = (data.status || '') as Order['status'];
+      setOrders((prev) => prev.map((o) => (o.id === matchId ? { ...o, status: newStatus } : o)));
     });
 
     // Stock state listeners — keep KDS in sync with sold-out items
@@ -277,8 +346,9 @@ export default function KitchenPage() {
     };
   }, []);
 
-  const active = orders.filter((o) => o.status !== 'SERVED');
-  const served = orders.filter((o) => o.status === 'SERVED');
+  const terminalStatuses = ['DELIVERED', 'REJECTED'];
+  const active = orders.filter((o) => !terminalStatuses.includes(o.status));
+  const completed = orders.filter((o) => terminalStatuses.includes(o.status));
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -371,13 +441,13 @@ export default function KitchenPage() {
               )}
             </section>
 
-            {served.length > 0 && (
+            {completed.length > 0 && (
               <section className="mt-10">
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
-                  Served Today ({served.length})
+                  Completed / Rejected ({completed.length})
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-60">
-                  {served.map((order) => (
+                  {completed.map((order) => (
                     <OrderCard key={order.id} order={order} onStatusChange={handleStatusChange} />
                   ))}
                 </div>
