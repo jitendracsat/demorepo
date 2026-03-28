@@ -95,18 +95,22 @@ export default function OrderSuccessView({
       const incomingId = data.orderId || data.OrderId || '';
       const incomingStatus = String(data.status || '');
 
-      console.log('[ORDER SUCCESS] ORDER_STATUS_CHANGED received:', JSON.stringify(data));
-      console.log('[ORDER SUCCESS] Comparing orderId — ours:', orderId, '| incoming:', incomingId);
+      console.log('--- [STAGE 4] FRONTEND: Received Order Status via Socket ---');
+      console.log('[STAGE 4] Raw socket data:', JSON.stringify(data));
+      console.log('[STAGE 4] Comparing orderId — ours:', orderId, '| incoming:', incomingId);
 
       if (incomingId === orderId) {
         const mapped = normalizeStatus(incomingStatus);
-        console.log('[ORDER SUCCESS] Status matched! Raw:', incomingStatus, '→ Mapped:', mapped);
+        console.log('[STAGE 4] Status MATCHED! Raw:', incomingStatus, '→ Mapped:', mapped);
         setCurrentStatus(mapped);
+      } else {
+        console.log('[STAGE 4] Status IGNORED — orderId mismatch');
       }
     };
 
     socket.on('ORDER_STATUS_CHANGED', handleStatusChange);
-    console.log('[ORDER SUCCESS] Listening for ORDER_STATUS_CHANGED | orderId:', orderId);
+    console.log('--- [STAGE 4] FRONTEND: Checking Order Status ---');
+    console.log('[STAGE 4] Listening for ORDER_STATUS_CHANGED | orderId:', orderId);
 
     return () => {
       socket.off('ORDER_STATUS_CHANGED', handleStatusChange);

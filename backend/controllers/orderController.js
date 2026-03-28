@@ -6,10 +6,10 @@ import { getIO } from '../socket.js';
 export const createOrder = async (req, res) => {
   try {
     console.log('\n############################################################');
-    console.log('[ORDER CTRL] >>>  NEW ORDER REQUEST  <<<');
-    console.log('[ORDER CTRL] Timestamp:', new Date().toISOString());
+    console.log('--- [STAGE 1] BACKEND: Order Request Received from Frontend ---');
+    console.log('[STAGE 1] Timestamp:', new Date().toISOString());
     console.log('############################################################');
-    console.log('[ORDER CTRL] Full request body:', JSON.stringify(req.body, null, 2));
+    console.log('[STAGE 1] req.body:', JSON.stringify(req.body, null, 2));
 
     const {
       cartItems,
@@ -230,13 +230,17 @@ export const verifyOTP = async (req, res) => {
     const safe = (val, maxLen) => val ? String(val).substring(0, maxLen) : "";
     const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+    const backendBaseUrl = process.env.BACKEND_BASE_URL || 'http://localhost:5000';
+
     const posPayload = {
-      outletId: safe(verifiedOrder.outletId, 10) || "010",
-      restaurantid: safe(verifiedOrder.restaurantId, 10) || "210014",
+      outletId: safe(verifiedOrder.outletId, 10) || "020",
+      restaurantid: safe(verifiedOrder.restaurantId, 10) || "240018",
       OrderId: verifiedOrder.orderId,
       OrderDate: verifiedOrder.orderDate.toISOString(),
-      PosCode: safe(verifiedOrder.posCode, 10) || "001",
+      PosCode: safe(verifiedOrder.posCode, 10) || "rest",
       TblNo: safe(verifiedOrder.tableNumber, 10),
+      callbackUrl: `${backendBaseUrl}/api/orders/status-update`,
+      statusCallbackUrl: `${backendBaseUrl}/api/order/status`,
       guest: {
         guestId: safe(verifiedOrder.guestId, 20),
         name: safe(verifiedOrder.guestName, 50),
@@ -267,34 +271,38 @@ export const verifyOTP = async (req, res) => {
 
     try {
       const proxySecret = process.env.PROXY_SECRET;
-      const proxyUrl = 'https://proxy.csatspl.com/api/syncorder';
+      const proxyUrl = process.env.CSAT_PROXY_URL;
 
-      console.log('[PROXY SYNC] >>> SENDING VERIFIED ORDER TO CSAT PROXY <<<');
-      console.log('[PROXY SYNC] URL:', proxyUrl);
-
-      const proxyStartTime = Date.now();
-      const proxyRes = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Proxy-Secret': proxySecret || '',
-          'outletId': '010',
-          'restaurantid': '210014',
-          'poscode': 'rest',
-        },
-        body: JSON.stringify(posPayload),
-      });
-
-      const proxyElapsed = Date.now() - proxyStartTime;
-      const proxyData = await proxyRes.json().catch(() => null);
-
-      console.log('[PROXY SYNC] Response in', proxyElapsed, 'ms | HTTP:', proxyRes.status);
-      console.log('[PROXY SYNC] Body:', JSON.stringify(proxyData, null, 2));
-
-      if (proxyRes.ok) {
-        console.log('[PROXY SYNC] Order synced to CSAT proxy successfully');
+      if (!proxyUrl) {
+        console.warn('[PROXY SYNC] SKIPPED — CSAT_PROXY_URL not set in .env');
       } else {
-        console.error('[PROXY SYNC] CSAT proxy rejected — status:', proxyRes.status);
+        console.log('[PROXY SYNC] >>> SENDING VERIFIED ORDER TO CSAT PROXY <<<');
+        console.log('[PROXY SYNC] URL:', proxyUrl);
+
+        const proxyStartTime = Date.now();
+        const proxyRes = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Proxy-Secret': proxySecret || '',
+            'outletId': safe(verifiedOrder.outletId, 10),
+            'restaurantid': safe(verifiedOrder.restaurantId, 10),
+            'poscode': safe(verifiedOrder.posCode, 10),
+          },
+          body: JSON.stringify(posPayload),
+        });
+
+        const proxyElapsed = Date.now() - proxyStartTime;
+        const proxyData = await proxyRes.json().catch(() => null);
+
+        console.log('[PROXY SYNC] Response in', proxyElapsed, 'ms | HTTP:', proxyRes.status);
+        console.log('[PROXY SYNC] Body:', JSON.stringify(proxyData, null, 2));
+
+        if (proxyRes.ok) {
+          console.log('[PROXY SYNC] Order synced to CSAT proxy successfully');
+        } else {
+          console.error('[PROXY SYNC] CSAT proxy rejected — status:', proxyRes.status);
+        }
       }
     } catch (proxyError) {
       console.error('[PROXY SYNC] FAILED (NON-BLOCKING):', proxyError.message);
@@ -404,9 +412,9 @@ const POS_STATUS_MAP = {
 export const posStatusWebhook = async (req, res) => {
   try {
     console.log('\n############################################################');
-    console.log('[POS WEBHOOK] >>> INBOUND STATUS UPDATE <<<');
-    console.log('[POS WEBHOOK] Timestamp:', new Date().toISOString());
-    console.log('[POS WEBHOOK] Full body:', JSON.stringify(req.body, null, 2));
+    console.log('--- [STAGE 3] WEBHOOK: Received Update from POS (POST body) ---');
+    console.log('[STAGE 3] Timestamp:', new Date().toISOString());
+    console.log('[STAGE 3] req.body:', JSON.stringify(req.body, null, 2));
     console.log('############################################################');
 
     const { OrderId, Status } = req.body;
@@ -449,8 +457,8 @@ export const posStatusWebhook = async (req, res) => {
     // Emit real-time event to frontend
     const io = getIO();
     if (io) {
-      io.emit('ORDER_STATUS_CHANGED', { OrderId: String(OrderId), status: mappedStatus });
-      console.log('[POS WEBHOOK] Socket.io emitted ORDER_STATUS_CHANGED:', { OrderId: String(OrderId), status: mappedStatus });
+      io.emit('ORDER_STATUS_CHANGED', { orderId: String(OrderId), status: mappedStatus });
+      console.log('[POS WEBHOOK] Socket.io emitted ORDER_STATUS_CHANGED:', { orderId: String(OrderId), status: mappedStatus });
     } else {
       console.log('[POS WEBHOOK] WARNING: Socket.io not available');
     }
@@ -485,14 +493,14 @@ export const inboundOrderStatus = async (req, res) => {
     const { restaurantId, outletId, orderId, status } = req.query;
 
     console.log('\n############################################################');
-    console.log('[POS INBOUND] >>> STATUS UPDATE VIA QUERY PARAMS <<<');
-    console.log('[POS INBOUND] Timestamp:', new Date().toISOString());
-    console.log('[POS INBOUND] Method:', req.method);
-    console.log('[POS INBOUND] Query params:', JSON.stringify(req.query));
-    console.log('[POS INBOUND] restaurantId:', restaurantId);
-    console.log('[POS INBOUND] outletId:', outletId);
-    console.log('[POS INBOUND] orderId:', orderId);
-    console.log('[POS INBOUND] status:', status);
+    console.log('--- [STAGE 3] WEBHOOK: Received Update from POS (query params) ---');
+    console.log('[STAGE 3] Timestamp:', new Date().toISOString());
+    console.log('[STAGE 3] Method:', req.method);
+    console.log('[STAGE 3] Query params:', JSON.stringify(req.query));
+    console.log('[STAGE 3] restaurantId:', restaurantId);
+    console.log('[STAGE 3] outletId:', outletId);
+    console.log('[STAGE 3] orderId:', orderId);
+    console.log('[STAGE 3] status:', status);
     console.log('############################################################');
 
     if (!orderId || status == null) {

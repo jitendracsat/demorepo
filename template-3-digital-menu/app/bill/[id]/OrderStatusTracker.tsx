@@ -30,10 +30,17 @@ export default function OrderStatusTracker({
   useEffect(() => {
     const socket = getSocket();
 
+    console.log('--- [STAGE 4] FRONTEND (Bill Tracker): Listening for ORDER_STATUS_UPDATED | orderId:', orderId);
+
     socket.on(
       'ORDER_STATUS_UPDATED',
       ({ id, status: newStatus }: { id: string; status: OrderStatus }) => {
-        if (id === orderId) setStatus(newStatus);
+        console.log('[STAGE 4] ORDER_STATUS_UPDATED received:', { id, status: newStatus });
+        console.log('[STAGE 4] Comparing — ours:', orderId, '| incoming:', id);
+        if (id === orderId) {
+          console.log('[STAGE 4] Status MATCHED! Updating to:', newStatus);
+          setStatus(newStatus);
+        }
       }
     );
 

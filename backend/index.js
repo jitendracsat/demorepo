@@ -59,6 +59,9 @@ httpServer.listen(PORT, () => {
   console.log('  WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID || '(NOT SET)');
   console.log('  WHATSAPP_VERIFY_TOKEN:', process.env.WHATSAPP_VERIFY_TOKEN || '(NOT SET)');
   console.log('  FRONTEND_URL:', process.env.FRONTEND_URL || '(NOT SET)');
+  console.log('  POS_API_URL:', process.env.POS_API_URL || '(NOT SET)');
+  console.log('  BACKEND_BASE_URL:', process.env.BACKEND_BASE_URL || '(NOT SET)');
+  console.log('  CSAT_PROXY_URL:', process.env.CSAT_PROXY_URL || '(NOT SET)');
   console.log('  Routes: /api/orders, /api/syncorder, /api/whatsapp, /api/order/status');
   console.log('============================================================\n');
 });
