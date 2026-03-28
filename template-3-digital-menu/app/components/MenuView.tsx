@@ -539,7 +539,7 @@ export default function MenuView({ onBackAction }: MenuViewProps) {
       )}
 
       {checkoutStep === 'success' && (
-        <OrderSuccessView cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} orderId={orderData?.orderId || ''} onBackToMenu={() => { setCheckoutStep(null); setOrderData(null); }} onViewBill={() => setCheckoutStep('summary')} />
+        <OrderSuccessView cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} orderId={orderData?.orderId || ''} dbId={orderData?.dbId || ''} onBackToMenu={() => { setCheckoutStep(null); setOrderData(null); }} onViewBill={() => setCheckoutStep('summary')} />
       )}
       
       <OrderSummaryView isOpen={checkoutStep === 'summary'} cartItems={orderData?.items || []} billDetails={orderData?.bill || {}} onBack={() => setCheckoutStep('success')} onEdit={() => { setCheckoutStep(null); }} onProceedToPay={() => setCheckoutStep('payment')} />

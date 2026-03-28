@@ -12,6 +12,7 @@ export interface OrderSuccessProps {
     total: number;
   };
   orderId?: string;
+  dbId?: string;
   estimatedTimeMinutes?: number;
   onBackToMenu: () => void;
   onViewBill: () => void;
@@ -80,6 +81,7 @@ export default function OrderSuccessView({
   cartItems,
   billDetails,
   orderId = '',
+  dbId = '',
   estimatedTimeMinutes = 20,
   onBackToMenu,
   onViewBill
@@ -91,15 +93,18 @@ export default function OrderSuccessView({
   useEffect(() => {
     const socket = getSocket();
 
-    const handleStatusChange = (data: { orderId?: string; OrderId?: string; status?: string }) => {
+    const handleStatusChange = (data: { orderId?: string; OrderId?: string; dbId?: string; status?: string }) => {
       const incomingId = data.orderId || data.OrderId || '';
+      const incomingDbId = data.dbId || '';
       const incomingStatus = String(data.status || '');
 
       console.log('--- [STAGE 4] FRONTEND: Received Order Status via Socket ---');
       console.log('[STAGE 4] Raw socket data:', JSON.stringify(data));
-      console.log('[STAGE 4] Comparing orderId — ours:', orderId, '| incoming:', incomingId);
+      console.log('[STAGE 4] Comparing — ours:', orderId, '(dbId:', dbId, ') | incoming orderId:', incomingId, '| incoming dbId:', incomingDbId);
 
-      if (incomingId === orderId) {
+      const isMatch = incomingId === orderId || incomingDbId === orderId
+        || (dbId && (incomingId === dbId || incomingDbId === dbId));
+      if (isMatch) {
         const mapped = normalizeStatus(incomingStatus);
         console.log('[STAGE 4] Status MATCHED! Raw:', incomingStatus, '→ Mapped:', mapped);
         setCurrentStatus(mapped);
@@ -115,7 +120,7 @@ export default function OrderSuccessView({
     return () => {
       socket.off('ORDER_STATUS_CHANGED', handleStatusChange);
     };
-  }, [orderId]);
+  }, [orderId, dbId]);
 
   // Dynamic Timer Logic
   const [timeLeft, setTimeLeft] = useState(estimatedTimeMinutes * 60);

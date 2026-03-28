@@ -225,6 +225,9 @@ export const verifyOTP = async (req, res) => {
     });
 
     console.log('[VERIFY OTP] Order VERIFIED:', verifiedOrder.id, '| isVerified:', verifiedOrder.isVerified);
+    console.log('[VERIFY OTP] DB UUID (id):', verifiedOrder.id);
+    console.log('[VERIFY OTP] External orderId:', verifiedOrder.orderId);
+    console.log('[VERIFY OTP] >>> THIS orderId MUST match what the frontend is displaying <<<');
 
     // ============ POS PROXY SYNC (moved from createOrder) ============
     const safe = (val, maxLen) => val ? String(val).substring(0, maxLen) : "";
@@ -454,11 +457,12 @@ export const posStatusWebhook = async (req, res) => {
 
     console.log('[POS WEBHOOK] DB updated — new status:', updatedOrder.status);
 
-    // Emit real-time event to frontend
+    // Emit real-time event to frontend (include both DB UUID and external orderId for matching)
     const io = getIO();
     if (io) {
-      io.emit('ORDER_STATUS_CHANGED', { orderId: String(OrderId), status: mappedStatus });
-      console.log('[POS WEBHOOK] Socket.io emitted ORDER_STATUS_CHANGED:', { orderId: String(OrderId), status: mappedStatus });
+      const payload = { orderId: String(OrderId), dbId: order.id, status: mappedStatus };
+      io.emit('ORDER_STATUS_CHANGED', payload);
+      console.log('[POS WEBHOOK] Socket.io emitted ORDER_STATUS_CHANGED:', payload);
     } else {
       console.log('[POS WEBHOOK] WARNING: Socket.io not available');
     }
@@ -536,11 +540,12 @@ export const inboundOrderStatus = async (req, res) => {
 
     console.log('[POS INBOUND] DB updated — new status:', updatedOrder.status);
 
-    // Emit real-time event to frontend
+    // Emit real-time event to frontend (include both DB UUID and external orderId for matching)
     const io = getIO();
     if (io) {
-      io.emit('ORDER_STATUS_CHANGED', { orderId: String(orderId), status: mappedStatus });
-      console.log('[POS INBOUND] Socket.io emitted ORDER_STATUS_CHANGED:', { orderId: String(orderId), status: mappedStatus });
+      const payload = { orderId: String(orderId), dbId: order.id, status: mappedStatus };
+      io.emit('ORDER_STATUS_CHANGED', payload);
+      console.log('[POS INBOUND] Socket.io emitted ORDER_STATUS_CHANGED:', payload);
     } else {
       console.log('[POS INBOUND] WARNING: Socket.io not available');
     }
